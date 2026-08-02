@@ -2,21 +2,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'core/di/service_locator.dart';
-import 'core/services/memory_service.dart';
 import 'core/services/theme_preference_service.dart';
 import 'core/theme/app_theme.dart';
-// import 'features/goal_selection/presentation/screens/goal_selection_screen.dart';
+import 'features/splash/presentation/screens/splash_screen.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  setupLocator();
-  await sl<MemoryService>().init();
-
-  final container = ProviderContainer();
-  await container.read(themeModeProvider.notifier).load();
-
-  runApp(UncontrolledProviderScope(container: container, child: const MyApp()));
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends ConsumerWidget {
@@ -32,7 +24,7 @@ class MyApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
-      // home: const GoalSelectionScreen(),
+      home: const SplashScreen(),
     );
   }
 }

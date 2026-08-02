@@ -1,6 +1,7 @@
 // core/constants/app_strings.dart
 abstract class AppStrings {
   static const appName = 'Cuemera';
+  static const appTagline = 'Your AI fashion photographer';
 
   static const goalSelectionTitle = 'Choose Your Shot';
   static const goalSelectionSubtitle = 'Pick a style to guide your session';
