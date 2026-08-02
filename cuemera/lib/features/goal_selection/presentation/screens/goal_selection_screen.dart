@@ -1,4 +1,5 @@
 // features/goal_selection/presentation/screens/goal_selection_screen.dart
+import 'package:cuemera/features/settings/presentation/screens/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,6 +25,16 @@ class GoalSelectionScreen extends ConsumerWidget {
       backgroundColor: colors.background,
       appBar: AppBar(
         title: Text(AppStrings.appName, style: AppTypography.heading2(colors)),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.settings, color: colors.text),
+            onPressed: () {
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
