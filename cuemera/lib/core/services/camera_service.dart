@@ -27,6 +27,15 @@ class CameraService {
     await _controller!.initialize();
   }
 
+  Future<XFile?> capture() async {
+    if (!isInitialized || _controller!.value.isTakingPicture) return null;
+    if (_controller!.value.isStreamingImages) {
+      await _controller!.stopImageStream();
+    }
+    final file = await _controller!.takePicture();
+    return file;
+  }
+
   Future<void> switchLens() async {
     if (_cameras.length < 2) return;
     _lensIndex = (_lensIndex + 1) % _cameras.length;

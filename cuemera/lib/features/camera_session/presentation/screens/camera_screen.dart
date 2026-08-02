@@ -8,15 +8,23 @@ import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
+import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
+import '../../../../shared/widgets/score_badge.dart';
+import '../../../../shared/widgets/target_zone_overlay.dart';
+import '../../../album/domain/models/shot.dart';
+import '../../../album/providers/album_providers.dart';
+import '../../../capture/providers/capture_providers.dart';
+import '../../../editorial_score/providers/score_providers.dart';
 import '../../../goal_selection/presentation/screens/goal_selection_screen.dart';
 import '../../../goal_selection/providers/goal_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
 import '../../../scene_analysis/services/face_analyzer.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
 import '../../../scene_analysis/services/pose_analyzer.dart';
+import '../../../voice_director/providers/voice_providers.dart';
 
 enum _CameraInitState { loading, ready, error }
 
@@ -30,6 +38,8 @@ class CameraScreen extends ConsumerStatefulWidget {
 class _CameraScreenState extends ConsumerState<CameraScreen> {
   _CameraInitState _state = _CameraInitState.loading;
   String? _errorMessage;
+  bool _hasCaptured = false;
+  bool _showFlash = false;
 
   DateTime _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _throttleInterval = Duration(milliseconds: 80);
@@ -96,6 +106,35 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     );
   }
 
+  Future<void> _performCapture() async {
+    final cameraService = ref.read(cameraServiceProvider);
+    await cameraService.capture();
+
+    final score = ref.read(currentScoreProvider);
+    if (score == null) return;
+
+    final shot = Shot(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      score: score,
+      timestamp: DateTime.now(),
+      shotType: 'hero',
+    );
+
+    ref.read(albumStateProvider.notifier).addShot(shot);
+
+    if (!mounted) return;
+    setState(() {
+      _hasCaptured = true;
+      _showFlash = true;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+    setState(() => _showFlash = false);
+
+    await cameraService.startImageStream(_onFrame);
+  }
+
   @override
   void dispose() {
     final cameraService = ref.read(cameraServiceProvider);
@@ -107,7 +146,25 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<AppColors>()!;
+
     ref.watch(sceneAnalysisListenerProvider);
+    ref.watch(voiceDirectorListenerProvider);
+
+    ref.listen<Shot?>(capturedShotProvider, (previous, shot) {
+      if (shot == null) return;
+      ref.read(albumStateProvider.notifier).addShot(shot);
+      if (!mounted) return;
+      setState(() {
+        _hasCaptured = true;
+        _showFlash = true;
+      });
+      Future.delayed(const Duration(milliseconds: 150), () {
+        if (!mounted) return;
+        setState(() => _showFlash = false);
+      });
+    });
+
+    ref.watch(autoCaptureProvider);
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -142,24 +199,81 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
           ),
         );
       case _CameraInitState.ready:
-        final controller = ref.read(cameraServiceProvider).controller;
-        if (controller == null || !controller.value.isInitialized) {
-          return Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation(colors.accent),
-            ),
-          );
-        }
-        return SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: controller.value.previewSize?.height ?? 1,
-              height: controller.value.previewSize?.width ?? 1,
-              child: CameraPreview(controller),
+        return _buildReadyBody(colors);
+    }
+  }
+
+  Widget _buildReadyBody(AppColors colors) {
+    final controller = ref.read(cameraServiceProvider).controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation(colors.accent),
+        ),
+      );
+    }
+
+    final subject = ref.watch(subjectProfileProvider);
+    final nextAction = ref.watch(nextActionProvider);
+    final score = ref.watch(currentScoreProvider);
+
+    final hasZone =
+        subject.bodyRatio != null || subject.shoulderAngleDegrees != null;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: controller.value.previewSize?.height ?? 1,
+            height: controller.value.previewSize?.width ?? 1,
+            child: CameraPreview(controller),
+          ),
+        ),
+        if (hasZone)
+          TargetZoneOverlay(
+            aligned: (subject.shoulderAngleDegrees?.abs() ?? 90) < 15,
+          ),
+        if (nextAction != null)
+          Positioned(
+            top: AppSpacing.xl2,
+            left: AppSpacing.md,
+            right: AppSpacing.md,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.surface.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: colors.accent, width: 1.5),
+                ),
+                child: Text(
+                  nextAction.phrase,
+                  style: AppTypography.body(
+                    colors,
+                  ).copyWith(color: colors.accent, fontWeight: FontWeight.w600),
+                ),
+              ),
             ),
           ),
-        );
-    }
+        if (_hasCaptured && score != null)
+          Positioned(
+            top: AppSpacing.xl2,
+            right: AppSpacing.md,
+            child: ScoreBadge(score: score.overall),
+          ),
+        if (_showFlash) Container(color: colors.accent.withOpacity(0.5)),
+        Positioned(
+          bottom: AppSpacing.xl,
+          left: AppSpacing.md,
+          right: AppSpacing.md,
+          child: PrimaryButton(label: 'Capture', onPressed: _performCapture),
+        ),
+      ],
+    );
   }
 }
