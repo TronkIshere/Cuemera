@@ -38,4 +38,31 @@ class AutoCaptureService {
   Future<void> triggerCapture() async {
     _lastCapture = DateTime.now();
   }
+
+  Map<String, bool> debugConditionBreakdown(
+    SubjectProfile subject,
+    SceneProfile scene,
+    double trackingProgress,
+  ) {
+    final shoulderOk =
+        subject.shoulderAngleDegrees == null ||
+        subject.shoulderAngleDegrees!.abs() < 15;
+    final faceOk =
+        subject.faceAngleDegrees == null ||
+        subject.faceAngleDegrees!.abs() < 20;
+    final backgroundOk = scene.backgroundClutterCount <= 5;
+    final cooldownOk =
+        _lastCapture == null ||
+        DateTime.now().difference(_lastCapture!).inMilliseconds >= 1500;
+
+    return {
+      'eyesOpen': subject.eyesOpen != false,
+      'brightness': scene.brightness >= 0.2,
+      'shoulderAngle': shoulderOk,
+      'faceAngle': faceOk,
+      'backgroundClutter': backgroundOk,
+      'trackingProgress': trackingProgress >= _minTrackingProgress,
+      'cooldown': cooldownOk,
+    };
+  }
 }

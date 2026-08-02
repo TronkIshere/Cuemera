@@ -2,7 +2,6 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
-import 'package:cuemera/core/services/tracking_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
@@ -17,6 +16,7 @@ import '../../../../shared/widgets/score_badge.dart';
 import '../../../../shared/widgets/target_zone_overlay.dart';
 import '../../../album/domain/models/shot.dart';
 import '../../../album/providers/album_providers.dart';
+import '../../../capture/domain/shot_builder.dart';
 import '../../../capture/providers/capture_providers.dart';
 import '../../../editorial_score/providers/score_providers.dart';
 import '../../../goal_selection/presentation/screens/goal_selection_screen.dart';
@@ -49,7 +49,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   final PoseAnalyzer _poseAnalyzer = PoseAnalyzer();
   final FaceAnalyzer _faceAnalyzer = FaceAnalyzer();
   final LightAnalyzer _lightAnalyzer = LightAnalyzer();
-  final TrackingEngine _trackingEngine = TrackingEngine();
 
   @override
   void initState() {
@@ -93,9 +92,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     if (now.difference(_lastProcessed) < _throttleInterval) return;
     _lastProcessed = now;
 
+    final trackingEngine = ref.read(trackingEngineProvider);
+
     final previousScene = ref.read(sceneProfileProvider);
     final rawScene = _lightAnalyzer.analyzeLight(image, previousScene);
-    final smoothedScene = _trackingEngine.smoothScene(rawScene, previousScene);
+    final smoothedScene = trackingEngine.smoothScene(rawScene, previousScene);
     ref.read(sceneProfileProvider.notifier).state = smoothedScene;
 
     final mlKitService = ref.read(mlKitServiceProvider);
@@ -114,15 +115,17 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     final cameraService = ref.read(cameraServiceProvider);
     final imagePath = await cameraService.capture();
 
-    final score = ref.read(currentScoreProvider);
-    if (score == null) return;
+    final subject = ref.read(subjectProfileProvider);
+    final scene = ref.read(sceneProfileProvider);
+    final goal = ref.read(selectedGoalProvider);
+    if (goal == null) return;
 
-    final shot = Shot(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      score: score,
-      timestamp: DateTime.now(),
-      shotType: 'hero',
+    final shot = buildShotFromCapture(
       imagePath: imagePath,
+      subject: subject,
+      scene: scene,
+      goal: goal,
+      shotType: 'hero',
     );
 
     ref.read(albumStateProvider.notifier).addShot(shot);

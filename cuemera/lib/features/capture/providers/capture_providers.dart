@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/camera_service.dart';
 import '../../album/domain/models/shot.dart';
-import '../../editorial_score/domain/score_calculator.dart';
 import '../../goal_selection/providers/goal_providers.dart';
 import '../../scene_analysis/providers/scene_providers.dart';
+import '../domain/shot_builder.dart';
 import '../services/auto_capture_service.dart';
 
 final autoCaptureServiceProvider = Provider<AutoCaptureService>((ref) {
@@ -35,12 +35,11 @@ final autoCaptureProvider = Provider<void>((ref) {
     final goal = ref.read(selectedGoalProvider);
     if (goal == null) return;
 
-    final score = calculateScore(subject, scene, goal);
-
-    final shot = Shot(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      score: score,
-      timestamp: DateTime.now(),
+    final shot = buildShotFromCapture(
+      imagePath: null,
+      subject: subject,
+      scene: scene,
+      goal: goal,
       shotType: 'hero',
     );
 
