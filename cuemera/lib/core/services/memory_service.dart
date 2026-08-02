@@ -23,6 +23,26 @@ class MemoryService {
     await _habitsBox.put(key, value);
   }
 
+  Future<void> saveHabit(String key, dynamic value) async {
+    await _habitsBox.put(key, value);
+  }
+
+  Future<void> recordCorrection(String correctionType) async {
+    final corrections =
+        _habitsBox.get('corrections', defaultValue: <String, int>{}) as Map;
+    final current = (corrections[correctionType] as int?) ?? 0;
+    corrections[correctionType] = current + 1;
+    await _habitsBox.put('corrections', corrections);
+  }
+
+  Map<String, int> getFrequentCorrections() {
+    final corrections =
+        _habitsBox.get('corrections', defaultValue: <String, int>{}) as Map;
+    return corrections.map(
+      (key, value) => MapEntry(key as String, value as int),
+    );
+  }
+
   T? getAlbumValue<T>(String key, {T? defaultValue}) {
     return _albumBox.get(key, defaultValue: defaultValue) as T?;
   }
