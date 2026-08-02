@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
+import 'package:cuemera/core/services/tracking_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
@@ -48,6 +49,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   final PoseAnalyzer _poseAnalyzer = PoseAnalyzer();
   final FaceAnalyzer _faceAnalyzer = FaceAnalyzer();
   final LightAnalyzer _lightAnalyzer = LightAnalyzer();
+  final TrackingEngine _trackingEngine = TrackingEngine();
 
   @override
   void initState() {
@@ -91,9 +93,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     if (now.difference(_lastProcessed) < _throttleInterval) return;
     _lastProcessed = now;
 
-    final scene = ref.read(sceneProfileProvider);
-    final updatedScene = _lightAnalyzer.analyzeLight(image, scene);
-    ref.read(sceneProfileProvider.notifier).state = updatedScene;
+    final previousScene = ref.read(sceneProfileProvider);
+    final rawScene = _lightAnalyzer.analyzeLight(image, previousScene);
+    final smoothedScene = _trackingEngine.smoothScene(rawScene, previousScene);
+    ref.read(sceneProfileProvider.notifier).state = smoothedScene;
 
     final mlKitService = ref.read(mlKitServiceProvider);
     final cameraService = ref.read(cameraServiceProvider);
@@ -218,6 +221,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     final subject = ref.watch(subjectProfileProvider);
     final nextAction = ref.watch(nextActionProvider);
     final score = ref.watch(currentScoreProvider);
+    final trackingProgress = ref.watch(trackingProgressProvider);
 
     final hasZone =
         subject.bodyRatio != null || subject.shoulderAngleDegrees != null;
@@ -236,6 +240,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
         if (hasZone)
           TargetZoneOverlay(
             aligned: (subject.shoulderAngleDegrees?.abs() ?? 90) < 15,
+            trackingProgress: trackingProgress,
           ),
         if (nextAction != null)
           Positioned(

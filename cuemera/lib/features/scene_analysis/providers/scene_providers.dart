@@ -1,4 +1,5 @@
 // features/scene_analysis/providers/scene_providers.dart
+import 'package:cuemera/core/services/tracking_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/camera_service.dart';
@@ -8,7 +9,6 @@ import '../domain/models/subject_profile.dart';
 import '../services/face_analyzer.dart';
 import '../services/light_analyzer.dart';
 import '../services/pose_analyzer.dart';
-import '../services/tracking_engine.dart';
 
 final subjectProfileProvider = StateProvider<SubjectProfile>((ref) {
   return SubjectProfile(timestamp: DateTime.now());
@@ -29,6 +29,25 @@ final lightAnalyzerProvider = Provider<LightAnalyzer>((ref) => LightAnalyzer());
 final trackingEngineProvider = Provider<TrackingEngine>(
   (ref) => TrackingEngine(),
 );
+
+final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
+  final current = ref.watch(subjectProfileProvider);
+  return SubjectProfile(
+    bodyRatio: current.bodyRatio,
+    faceAngleDegrees: 0.0,
+    shoulderAngleDegrees: 0.0,
+    eyesOpen: true,
+    expression: 'smiling',
+    timestamp: DateTime.now(),
+  );
+});
+
+final trackingProgressProvider = Provider<double>((ref) {
+  final current = ref.watch(subjectProfileProvider);
+  final target = ref.watch(targetSubjectProfileProvider);
+  final trackingEngine = ref.watch(trackingEngineProvider);
+  return trackingEngine.trackingProgress(current, target);
+});
 
 final sceneAnalysisListenerProvider = Provider<void>((ref) {
   final mlKitService = ref.watch(mlKitServiceProvider);
