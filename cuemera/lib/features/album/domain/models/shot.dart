@@ -7,10 +7,12 @@ class Shot {
     required this.score,
     required this.timestamp,
     required this.shotType,
+    this.imagePath,
   });
 
   final String id;
   final EditorialScore score;
   final DateTime timestamp;
   final String shotType;
+  final String? imagePath;
 }

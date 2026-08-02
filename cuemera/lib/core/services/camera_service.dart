@@ -27,13 +27,13 @@ class CameraService {
     await _controller!.initialize();
   }
 
-  Future<XFile?> capture() async {
+  Future<String?> capture() async {
     if (!isInitialized || _controller!.value.isTakingPicture) return null;
     if (_controller!.value.isStreamingImages) {
       await _controller!.stopImageStream();
     }
     final file = await _controller!.takePicture();
-    return file;
+    return file.path;
   }
 
   Future<void> switchLens() async {

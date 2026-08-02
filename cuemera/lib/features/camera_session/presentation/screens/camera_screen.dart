@@ -25,6 +25,7 @@ import '../../../scene_analysis/services/face_analyzer.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
 import '../../../scene_analysis/services/pose_analyzer.dart';
 import '../../../voice_director/providers/voice_providers.dart';
+import '../widgets/album_button.dart';
 
 enum _CameraInitState { loading, ready, error }
 
@@ -108,7 +109,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
   Future<void> _performCapture() async {
     final cameraService = ref.read(cameraServiceProvider);
-    await cameraService.capture();
+    final imagePath = await cameraService.capture();
 
     final score = ref.read(currentScoreProvider);
     if (score == null) return;
@@ -118,6 +119,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       score: score,
       timestamp: DateTime.now(),
       shotType: 'hero',
+      imagePath: imagePath,
     );
 
     ref.read(albumStateProvider.notifier).addShot(shot);
@@ -260,12 +262,20 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
               ),
             ),
           ),
-        if (_hasCaptured && score != null)
-          Positioned(
-            top: AppSpacing.xl2,
-            right: AppSpacing.md,
-            child: ScoreBadge(score: score.overall),
+        Positioned(
+          top: AppSpacing.xl2,
+          right: AppSpacing.md,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (_hasCaptured && score != null) ...[
+                ScoreBadge(score: score.overall),
+                const SizedBox(height: AppSpacing.sm),
+              ],
+              const AlbumButton(),
+            ],
           ),
+        ),
         if (_showFlash) Container(color: colors.accent.withOpacity(0.5)),
         Positioned(
           bottom: AppSpacing.xl,
