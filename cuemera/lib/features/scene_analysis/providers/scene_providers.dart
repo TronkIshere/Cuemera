@@ -8,6 +8,7 @@ import '../domain/models/subject_profile.dart';
 import '../services/face_analyzer.dart';
 import '../services/light_analyzer.dart';
 import '../services/pose_analyzer.dart';
+import '../services/tracking_engine.dart';
 
 final subjectProfileProvider = StateProvider<SubjectProfile>((ref) {
   return SubjectProfile(timestamp: DateTime.now());
@@ -25,25 +26,29 @@ final sceneProfileProvider = StateProvider<SceneProfile>((ref) {
 final poseAnalyzerProvider = Provider<PoseAnalyzer>((ref) => PoseAnalyzer());
 final faceAnalyzerProvider = Provider<FaceAnalyzer>((ref) => FaceAnalyzer());
 final lightAnalyzerProvider = Provider<LightAnalyzer>((ref) => LightAnalyzer());
+final trackingEngineProvider = Provider<TrackingEngine>(
+  (ref) => TrackingEngine(),
+);
 
 final sceneAnalysisListenerProvider = Provider<void>((ref) {
   final mlKitService = ref.watch(mlKitServiceProvider);
-  final cameraService = ref.watch(cameraServiceProvider);
   final poseAnalyzer = ref.watch(poseAnalyzerProvider);
   final faceAnalyzer = ref.watch(faceAnalyzerProvider);
-  final lightAnalyzer = ref.watch(lightAnalyzerProvider);
+  final trackingEngine = ref.watch(trackingEngineProvider);
 
   final subscription = mlKitService.analysisStream.listen((result) {
-    var subject = ref.read(subjectProfileProvider);
+    final previous = ref.read(subjectProfileProvider);
+    var raw = previous;
 
     if (result.poses != null) {
-      subject = poseAnalyzer.analyzePose(result.poses, subject);
+      raw = poseAnalyzer.analyzePose(result.poses, raw);
     }
     if (result.faces != null) {
-      subject = faceAnalyzer.analyzeFace(result.faces, subject);
+      raw = faceAnalyzer.analyzeFace(result.faces, raw);
     }
 
-    ref.read(subjectProfileProvider.notifier).state = subject;
+    final smoothed = trackingEngine.smoothSubject(raw, previous);
+    ref.read(subjectProfileProvider.notifier).state = smoothed;
   });
 
   ref.onDispose(subscription.cancel);
@@ -52,11 +57,13 @@ final sceneAnalysisListenerProvider = Provider<void>((ref) {
 final lightAnalysisListenerProvider = Provider<void>((ref) {
   final cameraService = ref.watch(cameraServiceProvider);
   final lightAnalyzer = ref.watch(lightAnalyzerProvider);
+  final trackingEngine = ref.watch(trackingEngineProvider);
 
   cameraService.startImageStream((image) {
-    final scene = ref.read(sceneProfileProvider);
-    final updated = lightAnalyzer.analyzeLight(image, scene);
-    ref.read(sceneProfileProvider.notifier).state = updated;
+    final previous = ref.read(sceneProfileProvider);
+    final raw = lightAnalyzer.analyzeLight(image, previous);
+    final smoothed = trackingEngine.smoothScene(raw, previous);
+    ref.read(sceneProfileProvider.notifier).state = smoothed;
   });
 
   ref.onDispose(() {
