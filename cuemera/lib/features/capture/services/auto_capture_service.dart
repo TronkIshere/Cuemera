@@ -2,10 +2,16 @@
 import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
 
+const double _minTrackingProgress = 0.9;
+
 class AutoCaptureService {
   DateTime? _lastCapture;
 
-  bool shouldCapture(SubjectProfile subject, SceneProfile scene) {
+  bool shouldCapture(
+    SubjectProfile subject,
+    SceneProfile scene,
+    double trackingProgress,
+  ) {
     if (subject.eyesOpen == false) return false;
     if (scene.brightness < 0.2) return false;
 
@@ -18,6 +24,8 @@ class AutoCaptureService {
     final backgroundOk = scene.backgroundClutterCount <= 5;
 
     if (!shoulderOk || !faceOk || !backgroundOk) return false;
+
+    if (trackingProgress < _minTrackingProgress) return false;
 
     if (_lastCapture != null) {
       final elapsed = DateTime.now().difference(_lastCapture!);

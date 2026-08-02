@@ -15,9 +15,10 @@ final autoCaptureServiceProvider = Provider<AutoCaptureService>((ref) {
 final shouldCaptureProvider = Provider<bool>((ref) {
   final subject = ref.watch(subjectProfileProvider);
   final scene = ref.watch(sceneProfileProvider);
+  final trackingProgress = ref.watch(trackingProgressProvider);
   final autoCaptureService = ref.watch(autoCaptureServiceProvider);
 
-  return autoCaptureService.shouldCapture(subject, scene);
+  return autoCaptureService.shouldCapture(subject, scene, trackingProgress);
 });
 
 final autoCaptureProvider = Provider<void>((ref) {
