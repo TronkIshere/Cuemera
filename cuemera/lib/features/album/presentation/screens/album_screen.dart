@@ -111,20 +111,57 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _ShotTile extends StatelessWidget {
+Future<bool> _confirmDeleteDialog(
+  BuildContext context,
+  AppColors colors,
+) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: colors.surface,
+      title: Text('Delete this shot?', style: AppTypography.heading2(colors)),
+      content: Text(
+        'This removes it from the album and deletes the saved file.',
+        style: AppTypography.body(colors),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text('Cancel', style: AppTypography.body(colors)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(
+            'Delete',
+            style: AppTypography.body(colors).copyWith(color: colors.warning),
+          ),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
+class _ShotTile extends ConsumerWidget {
   const _ShotTile({required this.shot, required this.colors});
 
   final Shot shot;
   final AppColors colors;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () {
         Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => ShotDetailScreen(shot: shot)));
+      },
+      onLongPress: () async {
+        final confirmed = await _confirmDeleteDialog(context, colors);
+        if (confirmed) {
+          await ref.read(albumStateProvider.notifier).removeShot(shot.id);
+        }
       },
       child: Container(
         decoration: BoxDecoration(
@@ -166,19 +203,31 @@ class _ShotTile extends StatelessWidget {
   }
 }
 
-class ShotDetailScreen extends StatelessWidget {
+class ShotDetailScreen extends ConsumerWidget {
   const ShotDetailScreen({super.key, required this.shot});
 
   final Shot shot;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).extension<AppColors>()!;
 
     return Scaffold(
       backgroundColor: colors.background,
       appBar: AppBar(
         title: Text(shot.shotType, style: AppTypography.heading2(colors)),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.delete_outline, color: colors.warning),
+            onPressed: () async {
+              final confirmed = await _confirmDeleteDialog(context, colors);
+              if (confirmed) {
+                await ref.read(albumStateProvider.notifier).removeShot(shot.id);
+                if (context.mounted) Navigator.of(context).pop();
+              }
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(

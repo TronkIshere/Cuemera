@@ -6,6 +6,15 @@ abstract class AppStrings {
   static const goalSelectionTitle = 'Choose Your Shot';
   static const goalSelectionSubtitle = 'Pick a style to guide your session';
 
+  static const homeShootLabel = 'Shoot';
+  static const homeAlbumLabel = 'Album';
+  static const homeSettingsLabel = 'Settings';
+  static const homeTagline = 'EDITORIAL AI PHOTOGRAPHER';
+  static const homeShootSubtitle = 'Real-time AI direction';
+  static const homeAlbumSubtitle = 'Past sessions & exports';
+  static const homeSettingsSubtitle = 'Preferences & devices';
+  static const homeTapToBegin = 'Tap to begin';
+
   static const permissionCameraDenied = 'Camera access is required to continue';
   static const permissionRetry = 'Grant Permission';
 

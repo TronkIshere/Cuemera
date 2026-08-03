@@ -18,6 +18,10 @@ class AlbumState {
     return AlbumState(shots: [...shots, shot]);
   }
 
+  AlbumState removeShot(String shotId) {
+    return AlbumState(shots: shots.where((s) => s.id != shotId).toList());
+  }
+
   double diversityScore() {
     if (shots.isEmpty) return 0.0;
     final distinctTypes = shots.map((s) => s.shotType).toSet().length;

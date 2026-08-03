@@ -19,6 +19,7 @@ import '../../../album/providers/album_providers.dart';
 import '../../../capture/domain/shot_builder.dart';
 import '../../../capture/providers/capture_providers.dart';
 import '../../../editorial_score/providers/score_providers.dart';
+import '../../../goal_selection/domain/models/photography_goal.dart';
 import '../../../goal_selection/presentation/screens/goal_selection_screen.dart';
 import '../../../goal_selection/providers/goal_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
@@ -37,7 +38,8 @@ class CameraScreen extends ConsumerStatefulWidget {
   ConsumerState<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends ConsumerState<CameraScreen> {
+class _CameraScreenState extends ConsumerState<CameraScreen>
+    with WidgetsBindingObserver {
   _CameraInitState _state = _CameraInitState.loading;
   String? _errorMessage;
   bool _hasCaptured = false;
@@ -50,9 +52,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   final FaceAnalyzer _faceAnalyzer = FaceAnalyzer();
   final LightAnalyzer _lightAnalyzer = LightAnalyzer();
 
+  bool _wasStreamingBeforePause = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final goal = ref.read(selectedGoalProvider);
       if (goal == null) {
@@ -88,6 +93,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   }
 
   void _onFrame(CameraImage image) {
+    if (!mounted) return;
+
     final now = DateTime.now();
     if (now.difference(_lastProcessed) < _throttleInterval) return;
     _lastProcessed = now;
@@ -114,6 +121,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   Future<void> _performCapture() async {
     final cameraService = ref.read(cameraServiceProvider);
     final imagePath = await cameraService.capture();
+    if (!mounted) return;
 
     final subject = ref.read(subjectProfileProvider);
     final scene = ref.read(sceneProfileProvider);
@@ -140,13 +148,97 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     if (!mounted) return;
     setState(() => _showFlash = false);
 
+    if (!mounted) return;
     await cameraService.startImageStream(_onFrame);
+  }
+
+  void _onAdjustmentsTap() {}
+
+  void _onModeSelectorTap() {}
+
+  void _onReferencePhotoTap() {}
+
+  Future<void> _showGoalPicker(AppColors colors) {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        final selectedGoal = ref.read(selectedGoalProvider);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: colors.textMuted.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                ...PhotographyGoal.values.map((goal) {
+                  final isSelected = goal == selectedGoal;
+                  return ListTile(
+                    onTap: () {
+                      ref.read(selectedGoalProvider.notifier).state = goal;
+                      Navigator.of(sheetContext).pop();
+                    },
+                    title: Text(
+                      goal.name,
+                      style: AppTypography.body(colors).copyWith(
+                        color: isSelected ? colors.accent : colors.text,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Icon(Icons.check, color: colors.accent, size: 18)
+                        : null,
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    if (_state != _CameraInitState.ready) return;
+    final cameraService = ref.read(cameraServiceProvider);
+
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        _wasStreamingBeforePause =
+            cameraService.controller?.value.isStreamingImages ?? false;
+        cameraService.stopImageStream();
+        break;
+      case AppLifecycleState.resumed:
+        if (mounted && _wasStreamingBeforePause) {
+          cameraService.startImageStream(_onFrame);
+        }
+        break;
+      default:
+        break;
+    }
   }
 
   @override
   void dispose() {
     final cameraService = ref.read(cameraServiceProvider);
     cameraService.stopImageStream();
+    WidgetsBinding.instance.removeObserver(this);
     cameraService.dispose();
     super.dispose();
   }
@@ -174,9 +266,19 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
     ref.watch(autoCaptureProvider);
 
-    return Scaffold(
-      backgroundColor: colors.background,
-      body: _buildBody(colors),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final cameraService = ref.read(cameraServiceProvider);
+        await cameraService.stopImageStream();
+        if (!mounted) return;
+        Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        backgroundColor: colors.background,
+        body: _buildBody(colors),
+      ),
     );
   }
 
@@ -211,6 +313,91 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     }
   }
 
+  Widget _topNavIcon({
+    required AppColors colors,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: colors.surface.withOpacity(0.7),
+          border: Border.all(color: colors.accent.withOpacity(0.35)),
+        ),
+        child: Icon(icon, size: 18, color: colors.accent),
+      ),
+    );
+  }
+
+  Widget _buildTopNavBar(AppColors colors) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.surface.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: colors.accent.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _topNavIcon(
+            colors: colors,
+            icon: Icons.tune,
+            onTap: _onAdjustmentsTap,
+          ),
+          _topNavIcon(
+            colors: colors,
+            icon: Icons.grid_view_outlined,
+            onTap: _onModeSelectorTap,
+          ),
+          _topNavIcon(
+            colors: colors,
+            icon: Icons.image_outlined,
+            onTap: _onReferencePhotoTap,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoalPill(AppColors colors, PhotographyGoal? selectedGoal) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () => _showGoalPicker(colors),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: colors.surface.withOpacity(0.85),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: colors.accent, width: 1.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              selectedGoal?.name ?? '',
+              style: AppTypography.caption(
+                colors,
+              ).copyWith(color: colors.accent, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Icon(Icons.expand_more, size: 16, color: colors.accent),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildReadyBody(AppColors colors) {
     final controller = ref.read(cameraServiceProvider).controller;
     if (controller == null || !controller.value.isInitialized) {
@@ -225,9 +412,19 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     final nextAction = ref.watch(nextActionProvider);
     final score = ref.watch(currentScoreProvider);
     final trackingProgress = ref.watch(trackingProgressProvider);
+    final selectedGoal = ref.watch(selectedGoalProvider);
 
     final hasZone =
         subject.bodyRatio != null || subject.shoulderAngleDegrees != null;
+
+    final topInset = MediaQuery.of(context).padding.top;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    const navBarHeight = 44.0;
+    const goalPillRowHeight = 32.0;
+    final clusterTop = topInset + AppSpacing.xs;
+    final secondRowTop = clusterTop + navBarHeight + AppSpacing.sm;
+    final phraseChipTop = secondRowTop + goalPillRowHeight + AppSpacing.sm;
 
     return Stack(
       fit: StackFit.expand,
@@ -245,9 +442,20 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
             aligned: (subject.shoulderAngleDegrees?.abs() ?? 90) < 15,
             trackingProgress: trackingProgress,
           ),
+        Positioned(
+          top: clusterTop,
+          left: AppSpacing.md,
+          right: AppSpacing.md,
+          child: _buildTopNavBar(colors),
+        ),
+        Positioned(
+          top: secondRowTop,
+          left: AppSpacing.md,
+          child: _buildGoalPill(colors, selectedGoal),
+        ),
         if (nextAction != null)
           Positioned(
-            top: AppSpacing.xl2,
+            top: phraseChipTop,
             left: AppSpacing.md,
             right: AppSpacing.md,
             child: Center(
@@ -271,7 +479,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
             ),
           ),
         Positioned(
-          top: AppSpacing.xl2,
+          top: secondRowTop,
           right: AppSpacing.md,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -286,7 +494,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
         ),
         if (_showFlash) Container(color: colors.accent.withOpacity(0.5)),
         Positioned(
-          bottom: AppSpacing.xl,
+          bottom: bottomInset + AppSpacing.md,
           left: AppSpacing.md,
           right: AppSpacing.md,
           child: PrimaryButton(label: 'Capture', onPressed: _performCapture),
