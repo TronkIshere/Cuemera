@@ -5,12 +5,16 @@ import 'package:gal/gal.dart';
 
 class CameraService {
   CameraController? _controller;
+  CameraController? _previewController;
   List<CameraDescription> _cameras = [];
   int _lensIndex = 0;
   Object? lastGallerySaveError;
 
   CameraController? get controller => _controller;
+  CameraController? get previewController => _previewController;
   bool get isInitialized => _controller?.value.isInitialized ?? false;
+  bool get isPreviewInitialized =>
+      _previewController?.value.isInitialized ?? false;
 
   Future<void> init() async {
     _cameras = await availableCameras();
@@ -27,6 +31,26 @@ class CameraService {
       imageFormatGroup: ImageFormatGroup.nv21,
     );
     await _controller!.initialize();
+  }
+
+  double _minZoom = 1.0;
+  double _maxZoom = 1.0;
+
+  double get minZoom => _minZoom;
+  double get maxZoom => _maxZoom;
+
+  Future<void> initPreviewController() async {
+    if (_cameras.isEmpty) return;
+    await _previewController?.dispose();
+    _previewController = CameraController(
+      _cameras[_lensIndex],
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.nv21,
+    );
+    await _previewController!.initialize();
+    _minZoom = await _previewController!.getMinZoomLevel();
+    _maxZoom = await _previewController!.getMaxZoomLevel();
   }
 
   Future<String?> capture() async {
@@ -93,6 +117,8 @@ class CameraService {
     await stopImageStream();
     await _controller?.dispose();
     _controller = null;
+    await _previewController?.dispose();
+    _previewController = null;
   }
 }
 

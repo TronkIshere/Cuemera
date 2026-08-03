@@ -2,13 +2,14 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
+import 'package:cuemera/core/constants/app_typography.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
-import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
@@ -28,6 +29,11 @@ import '../../../scene_analysis/services/light_analyzer.dart';
 import '../../../scene_analysis/services/pose_analyzer.dart';
 import '../../../voice_director/providers/voice_providers.dart';
 import '../widgets/album_button.dart';
+import '../widgets/camera_preview_layer.dart';
+import '../widgets/camera_top_nav_bar.dart';
+import '../widgets/debug_perf_overlay.dart';
+import '../widgets/goal_pill.dart';
+import '../widgets/phrase_chip.dart';
 
 enum _CameraInitState { loading, ready, error }
 
@@ -54,6 +60,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   bool _wasStreamingBeforePause = false;
 
+  double _baseZoom = 1.0;
+  double _currentZoom = 1.0;
+  Offset? _focusPoint;
+  Timer? _focusRingTimer;
+
+  final GlobalKey<State<DebugPerfOverlay>> _debugPerfOverlayKey =
+      GlobalKey<State<DebugPerfOverlay>>();
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +93,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     try {
       final cameraService = ref.read(cameraServiceProvider);
       await cameraService.init();
+      await cameraService.initPreviewController();
       await cameraService.startImageStream(_onFrame);
 
       if (!mounted) return;
@@ -94,6 +109,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   void _onFrame(CameraImage image) {
     if (!mounted) return;
+
+    if (kDebugMode) {
+      (_debugPerfOverlayKey.currentState as dynamic)?.registerFrame();
+    }
 
     final now = DateTime.now();
     if (now.difference(_lastProcessed) < _throttleInterval) return;
@@ -211,6 +230,58 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
+  Future<void> _onScaleStart(ScaleStartDetails details) async {
+    _baseZoom = _currentZoom;
+  }
+
+  Future<void> _onScaleUpdate(ScaleUpdateDetails details) async {
+    final cameraService = ref.read(cameraServiceProvider);
+    final previewController = cameraService.previewController;
+    if (previewController == null) return;
+
+    final zoom = (_baseZoom * details.scale).clamp(
+      cameraService.minZoom,
+      cameraService.maxZoom,
+    );
+    if (zoom == _currentZoom) return;
+    _currentZoom = zoom;
+    try {
+      await previewController.setZoomLevel(zoom);
+    } on CameraException {
+      // unsupported, ignore
+    }
+  }
+
+  Future<void> _onTapUp(
+    TapUpDetails details,
+    BoxConstraints constraints,
+  ) async {
+    final cameraService = ref.read(cameraServiceProvider);
+    final previewController = cameraService.previewController;
+    if (previewController == null) return;
+
+    final size = Size(constraints.maxWidth, constraints.maxHeight);
+    final normalized = Offset(
+      (details.localPosition.dx / size.width).clamp(0.0, 1.0),
+      (details.localPosition.dy / size.height).clamp(0.0, 1.0),
+    );
+
+    try {
+      await previewController.setFocusPoint(normalized);
+      await previewController.setExposurePoint(normalized);
+    } on CameraException {
+      // unsupported, ignore
+    }
+
+    _focusRingTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _focusPoint = details.localPosition);
+    _focusRingTimer = Timer(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      setState(() => _focusPoint = null);
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
@@ -237,6 +308,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   @override
   void dispose() {
     final cameraService = ref.read(cameraServiceProvider);
+    _focusRingTimer?.cancel();
     cameraService.stopImageStream();
     WidgetsBinding.instance.removeObserver(this);
     cameraService.dispose();
@@ -313,94 +385,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
   }
 
-  Widget _topNavIcon({
-    required AppColors colors,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: onTap,
-      child: Container(
-        width: 36,
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: colors.surface.withOpacity(0.7),
-          border: Border.all(color: colors.accent.withOpacity(0.35)),
-        ),
-        child: Icon(icon, size: 18, color: colors.accent),
-      ),
-    );
-  }
-
-  Widget _buildTopNavBar(AppColors colors) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: colors.surface.withOpacity(0.55),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: colors.accent.withOpacity(0.2)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _topNavIcon(
-            colors: colors,
-            icon: Icons.tune,
-            onTap: _onAdjustmentsTap,
-          ),
-          _topNavIcon(
-            colors: colors,
-            icon: Icons.grid_view_outlined,
-            onTap: _onModeSelectorTap,
-          ),
-          _topNavIcon(
-            colors: colors,
-            icon: Icons.image_outlined,
-            onTap: _onReferencePhotoTap,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGoalPill(AppColors colors, PhotographyGoal? selectedGoal) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: () => _showGoalPicker(colors),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.xs,
-        ),
-        decoration: BoxDecoration(
-          color: colors.surface.withOpacity(0.85),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: colors.accent, width: 1.5),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              selectedGoal?.name ?? '',
-              style: AppTypography.caption(
-                colors,
-              ).copyWith(color: colors.accent, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Icon(Icons.expand_more, size: 16, color: colors.accent),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildReadyBody(AppColors colors) {
-    final controller = ref.read(cameraServiceProvider).controller;
-    if (controller == null || !controller.value.isInitialized) {
+    final cameraService = ref.read(cameraServiceProvider);
+    final controller = cameraService.controller;
+    final previewController = cameraService.previewController;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        previewController == null ||
+        !previewController.value.isInitialized) {
       return Center(
         child: CircularProgressIndicator(
           valueColor: AlwaysStoppedAnimation(colors.accent),
@@ -429,54 +421,46 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        FittedBox(
-          fit: BoxFit.cover,
-          child: SizedBox(
-            width: controller.value.previewSize?.height ?? 1,
-            height: controller.value.previewSize?.width ?? 1,
-            child: CameraPreview(controller),
-          ),
+        CameraPreviewLayer(
+          previewController: previewController,
+          focusPoint: _focusPoint,
+          accentColor: colors.accent,
+          onScaleStart: _onScaleStart,
+          onScaleUpdate: _onScaleUpdate,
+          onTapUp: _onTapUp,
         ),
         if (hasZone)
           TargetZoneOverlay(
             aligned: (subject.shoulderAngleDegrees?.abs() ?? 90) < 15,
             trackingProgress: trackingProgress,
           ),
+        if (kDebugMode) DebugPerfOverlay(key: _debugPerfOverlayKey),
         Positioned(
           top: clusterTop,
           left: AppSpacing.md,
           right: AppSpacing.md,
-          child: _buildTopNavBar(colors),
+          child: CameraTopNavBar(
+            colors: colors,
+            onAdjustmentsTap: _onAdjustmentsTap,
+            onModeSelectorTap: _onModeSelectorTap,
+            onReferencePhotoTap: _onReferencePhotoTap,
+          ),
         ),
         Positioned(
           top: secondRowTop,
           left: AppSpacing.md,
-          child: _buildGoalPill(colors, selectedGoal),
+          child: GoalPill(
+            colors: colors,
+            selectedGoal: selectedGoal,
+            onTap: () => _showGoalPicker(colors),
+          ),
         ),
         if (nextAction != null)
           Positioned(
             top: phraseChipTop,
             left: AppSpacing.md,
             right: AppSpacing.md,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.sm,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.surface.withOpacity(0.85),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: colors.accent, width: 1.5),
-                ),
-                child: Text(
-                  nextAction.phrase,
-                  style: AppTypography.body(
-                    colors,
-                  ).copyWith(color: colors.accent, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
+            child: PhraseChip(colors: colors, phrase: nextAction.phrase),
           ),
         Positioned(
           top: secondRowTop,
