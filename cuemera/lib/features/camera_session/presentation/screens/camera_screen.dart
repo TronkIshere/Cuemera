@@ -14,8 +14,8 @@ import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
 import '../../../../shared/widgets/score_badge.dart';
-import '../../../../shared/widgets/target_zone_overlay.dart';
 import '../../../album/domain/models/shot.dart';
+import '../../../album/presentation/screens/album_screen.dart';
 import '../../../album/providers/album_providers.dart';
 import '../../../capture/domain/shot_builder.dart';
 import '../../../capture/providers/capture_providers.dart';
@@ -27,7 +27,6 @@ import '../../../scene_analysis/services/face_analyzer.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
 import '../../../scene_analysis/services/pose_analyzer.dart';
 import '../../../voice_director/providers/voice_providers.dart';
-import '../widgets/album_button.dart';
 import '../widgets/camera_preview_layer.dart';
 import '../widgets/camera_top_nav_bar.dart';
 import '../widgets/debug_perf_overlay.dart';
@@ -120,11 +119,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final controller = cameraService.controller;
     if (controller == null) return;
 
-    mlKitService.processImage(
-      image,
-      controller.description,
-      InputImageRotation.rotation0deg,
-    );
+    final rotation =
+        InputImageRotationValue.fromRawValue(
+          controller.description.sensorOrientation,
+        ) ??
+        InputImageRotation.rotation0deg;
+
+    mlKitService.processImage(image, controller.description, rotation);
   }
 
   Future<void> _performCapture() async {
@@ -245,9 +246,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       // unsupported, ignore
     }
 
-    _focusRingTimer?.cancel();
     if (!mounted) return;
     setState(() => _focusPoint = details.localPosition);
+
+    _focusRingTimer?.cancel();
     _focusRingTimer = Timer(const Duration(milliseconds: 600), () {
       if (!mounted) return;
       setState(() => _focusPoint = null);
@@ -378,9 +380,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final trackingProgress = ref.watch(trackingProgressProvider);
     final selectedReferencePath = ref.watch(selectedReferenceImagePathProvider);
 
-    final hasZone =
-        subject.bodyRatio != null || subject.shoulderAngleDegrees != null;
-
     final topInset = MediaQuery.of(context).padding.top;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
@@ -400,11 +399,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           onScaleUpdate: _onScaleUpdate,
           onTapUp: _onTapUp,
         ),
-        if (hasZone)
-          TargetZoneOverlay(
-            aligned: (subject.shoulderAngleDegrees?.abs() ?? 90) < 15,
-            trackingProgress: trackingProgress,
-          ),
         if (kDebugMode) DebugPerfOverlay(key: _debugPerfOverlayKey),
         Positioned(
           top: clusterTop,
@@ -416,6 +410,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             onModeSelectorTap: _onModeSelectorTap,
             onReferencePhotoTap: _onReferencePhotoTap,
             onFlipCameraTap: _flipCamera,
+            onAlbumTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AlbumScreen())),
             canFlipCamera: cameraService.hasMultipleCameras,
           ),
         ),
@@ -469,20 +466,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               ),
             ),
           ),
-        Positioned(
-          top: secondRowTop,
-          right: AppSpacing.md,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (_hasCaptured && score != null) ...[
-                ScoreBadge(score: score.overall),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              const AlbumButton(),
-            ],
+        if (_hasCaptured && score != null)
+          Positioned(
+            top: secondRowTop,
+            right: AppSpacing.md,
+            child: ScoreBadge(score: score.overall),
           ),
-        ),
         if (_showFlash) Container(color: colors.accent.withOpacity(0.5)),
         Positioned(
           bottom: bottomInset + AppSpacing.md,

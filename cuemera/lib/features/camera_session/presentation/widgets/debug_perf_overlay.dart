@@ -53,7 +53,7 @@ class _DebugPerfOverlayState extends ConsumerState<DebugPerfOverlay> {
     );
 
     return Positioned(
-      top: 40,
+      top: 200,
       left: 8,
       child: Container(
         padding: const EdgeInsets.all(8),

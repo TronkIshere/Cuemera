@@ -6,7 +6,13 @@ import '../domain/models/subject_profile.dart';
 class FaceAnalyzer {
   SubjectProfile analyzeFace(dynamic mlkitFaceResult, SubjectProfile previous) {
     final faces = mlkitFaceResult as List<Face>?;
-    if (faces == null || faces.isEmpty) return previous;
+    if (faces == null || faces.isEmpty) {
+      return previous.copyWith(
+        faceAngleDegrees: null,
+        eyesOpen: null,
+        expression: null,
+      );
+    }
 
     final face = faces.first;
 

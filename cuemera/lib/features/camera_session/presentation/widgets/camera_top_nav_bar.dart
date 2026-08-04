@@ -12,6 +12,7 @@ class CameraTopNavBar extends StatelessWidget {
     required this.onModeSelectorTap,
     required this.onReferencePhotoTap,
     required this.onFlipCameraTap,
+    required this.onAlbumTap,
     this.canFlipCamera = true,
   });
 
@@ -20,6 +21,7 @@ class CameraTopNavBar extends StatelessWidget {
   final VoidCallback onModeSelectorTap;
   final VoidCallback onReferencePhotoTap;
   final VoidCallback onFlipCameraTap;
+  final VoidCallback onAlbumTap;
   final bool canFlipCamera;
 
   Widget _icon(IconData icon, VoidCallback? onTap, {bool enabled = true}) {
@@ -67,6 +69,7 @@ class CameraTopNavBar extends StatelessWidget {
             onFlipCameraTap,
             enabled: canFlipCamera,
           ),
+          _icon(Icons.photo_library_outlined, onAlbumTap),
         ],
       ),
     );

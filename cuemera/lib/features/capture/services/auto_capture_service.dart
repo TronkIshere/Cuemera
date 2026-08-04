@@ -17,7 +17,7 @@ class AutoCaptureService {
     ToleranceSettings tolerance,
     double trackingProgress,
   ) {
-    if (subject.eyesOpen == false) return false;
+    if (subject.eyesOpen != true) return false;
     if (scene.brightness < 0.2) return false;
 
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
@@ -55,7 +55,7 @@ class AutoCaptureService {
         DateTime.now().difference(_lastCapture!).inMilliseconds >= 1500;
 
     return {
-      'eyesOpen': subject.eyesOpen != false,
+      'eyesOpen': subject.eyesOpen == true,
       'brightness': scene.brightness >= 0.2,
       'shoulderAngle': shoulderOk,
       'faceAngle': faceOk,
@@ -85,8 +85,9 @@ class AutoCaptureService {
     ToleranceSettings tolerance,
   ) {
     final subjectValue = subject.faceAngleDegrees;
+    if (subjectValue == null) return false;
     final referenceValue = reference.faceAngleDegrees;
-    if (subjectValue == null || referenceValue == null) return true;
+    if (referenceValue == null) return true;
 
     final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);

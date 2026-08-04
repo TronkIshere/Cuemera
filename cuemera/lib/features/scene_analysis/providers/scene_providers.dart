@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/camera_service.dart';
 import '../../../core/services/ml_kit_service.dart';
+import '../../reference_photo/domain/models/reference_profile.dart';
+import '../../reference_photo/providers/reference_providers.dart';
 import '../domain/models/scene_profile.dart';
 import '../domain/models/subject_profile.dart';
 import '../services/face_analyzer.dart';
@@ -32,6 +34,20 @@ final trackingEngineProvider = Provider<TrackingEngine>(
 
 final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
   final current = ref.watch(subjectProfileProvider);
+  final referenceAsync = ref.watch(referenceProfileProvider);
+  final ReferenceProfile? reference = referenceAsync.valueOrNull;
+
+  if (reference != null) {
+    return SubjectProfile(
+      bodyRatio: reference.bodyRatio,
+      faceAngleDegrees: reference.faceAngleDegrees,
+      shoulderAngleDegrees: reference.shoulderAngleDegrees,
+      eyesOpen: true,
+      expression: reference.expression,
+      timestamp: DateTime.now(),
+    );
+  }
+
   return SubjectProfile(
     bodyRatio: current.bodyRatio,
     faceAngleDegrees: 0.0,

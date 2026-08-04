@@ -15,22 +15,54 @@ class TrackingEngine {
   int? _pendingClutterCount;
   int _clutterStreak = 0;
 
+  int _bodyRatioMissingStreak = 0;
+  int _faceAngleMissingStreak = 0;
+  int _shoulderAngleMissingStreak = 0;
+  int _eyesOpenMissingStreak = 0;
+  int _expressionMissingStreak = 0;
+  int _lightDirectionMissingStreak = 0;
+  int _depthMissingStreak = 0;
+
   double? _ema(double? raw, double? previous) {
     if (raw == null) return previous;
     if (previous == null) return raw;
     return previous + _emaAlpha * (raw - previous);
   }
 
+  int _bumpMissingStreak(int streak, bool rawIsNull) {
+    return rawIsNull ? streak + 1 : 0;
+  }
+
   SubjectProfile smoothSubject(SubjectProfile raw, SubjectProfile previous) {
-    final bodyRatio = _ema(raw.bodyRatio, previous.bodyRatio);
-    final faceAngleDegrees = _ema(
+    _bodyRatioMissingStreak = _bumpMissingStreak(
+      _bodyRatioMissingStreak,
+      raw.bodyRatio == null,
+    );
+    _faceAngleMissingStreak = _bumpMissingStreak(
+      _faceAngleMissingStreak,
+      raw.faceAngleDegrees == null,
+    );
+    _shoulderAngleMissingStreak = _bumpMissingStreak(
+      _shoulderAngleMissingStreak,
+      raw.shoulderAngleDegrees == null,
+    );
+
+    var bodyRatio = _ema(raw.bodyRatio, previous.bodyRatio);
+    if (_bodyRatioMissingStreak >= _debounceFrames) bodyRatio = null;
+
+    var faceAngleDegrees = _ema(
       raw.faceAngleDegrees,
       previous.faceAngleDegrees,
     );
-    final shoulderAngleDegrees = _ema(
+    if (_faceAngleMissingStreak >= _debounceFrames) faceAngleDegrees = null;
+
+    var shoulderAngleDegrees = _ema(
       raw.shoulderAngleDegrees,
       previous.shoulderAngleDegrees,
     );
+    if (_shoulderAngleMissingStreak >= _debounceFrames) {
+      shoulderAngleDegrees = null;
+    }
 
     bool? eyesOpen = previous.eyesOpen;
     if (raw.eyesOpen != null) {
@@ -44,6 +76,11 @@ class TrackingEngine {
         eyesOpen = _pendingEyesOpen;
       }
     }
+    _eyesOpenMissingStreak = _bumpMissingStreak(
+      _eyesOpenMissingStreak,
+      raw.eyesOpen == null,
+    );
+    if (_eyesOpenMissingStreak >= _debounceFrames) eyesOpen = null;
 
     String? expression = previous.expression;
     if (raw.expression != null) {
@@ -57,6 +94,11 @@ class TrackingEngine {
         expression = _pendingExpression;
       }
     }
+    _expressionMissingStreak = _bumpMissingStreak(
+      _expressionMissingStreak,
+      raw.expression == null,
+    );
+    if (_expressionMissingStreak >= _debounceFrames) expression = null;
 
     return SubjectProfile(
       bodyRatio: bodyRatio,
@@ -71,17 +113,32 @@ class TrackingEngine {
   SceneProfile smoothScene(SceneProfile raw, SceneProfile previous) {
     final brightness =
         _ema(raw.brightness, previous.brightness) ?? previous.brightness;
-    final lightDirectionDegrees = _ema(
+
+    _lightDirectionMissingStreak = _bumpMissingStreak(
+      _lightDirectionMissingStreak,
+      raw.lightDirectionDegrees == null,
+    );
+    var lightDirectionDegrees = _ema(
       raw.lightDirectionDegrees,
       previous.lightDirectionDegrees,
     );
+    if (_lightDirectionMissingStreak >= _debounceFrames) {
+      lightDirectionDegrees = null;
+    }
+
     final negativeSpaceScore =
         _ema(raw.negativeSpaceScore, previous.negativeSpaceScore) ??
         previous.negativeSpaceScore;
     final symmetryScore =
         _ema(raw.symmetryScore, previous.symmetryScore) ??
         previous.symmetryScore;
-    final depthEstimate = _ema(raw.depthEstimate, previous.depthEstimate);
+
+    _depthMissingStreak = _bumpMissingStreak(
+      _depthMissingStreak,
+      raw.depthEstimate == null,
+    );
+    var depthEstimate = _ema(raw.depthEstimate, previous.depthEstimate);
+    if (_depthMissingStreak >= _debounceFrames) depthEstimate = null;
 
     int backgroundClutterCount = previous.backgroundClutterCount;
     if (raw.backgroundClutterCount == _pendingClutterCount) {

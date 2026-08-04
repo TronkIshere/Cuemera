@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -61,7 +62,11 @@ class MlKitService {
   }
 
   InputImage? _toInputImage(CameraImage image, InputImageRotation rotation) {
-    final bytes = image.planes.first.bytes;
+    final writeBuffer = WriteBuffer();
+    for (final plane in image.planes) {
+      writeBuffer.putUint8List(plane.bytes);
+    }
+    final bytes = writeBuffer.done().buffer.asUint8List();
     final metadata = InputImageMetadata(
       size: Size(image.width.toDouble(), image.height.toDouble()),
       rotation: rotation,

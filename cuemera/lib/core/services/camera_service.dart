@@ -12,6 +12,8 @@ class CameraService {
 
   CameraController? get controller => _controller;
   CameraController? get previewController => _previewController;
+  CameraDescription? get activeCameraDescription =>
+      _controller != null && _cameras.isNotEmpty ? _cameras[_lensIndex] : null;
   bool get isInitialized => _controller?.value.isInitialized ?? false;
   bool get isPreviewInitialized =>
       _previewController?.value.isInitialized ?? false;
