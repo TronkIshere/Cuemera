@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../capture/providers/capture_providers.dart';
+import '../../../reference_photo/providers/reference_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
 
 class DebugPerfOverlay extends ConsumerStatefulWidget {
@@ -36,10 +37,19 @@ class _DebugPerfOverlayState extends ConsumerState<DebugPerfOverlay> {
     final scene = ref.watch(sceneProfileProvider);
     final trackingProgress = ref.watch(trackingProgressProvider);
     final autoCaptureService = ref.watch(autoCaptureServiceProvider);
-    final breakdown = autoCaptureService.debugConditionBreakdown(
-      subject,
-      scene,
-      trackingProgress,
+    final referenceAsync = ref.watch(referenceProfileProvider);
+    final tolerance = ref.watch(toleranceSettingsProvider);
+    final breakdown = referenceAsync.maybeWhen(
+      data: (reference) => reference == null
+          ? <String, bool>{}
+          : autoCaptureService.debugConditionBreakdown(
+              subject,
+              scene,
+              reference,
+              tolerance,
+              trackingProgress,
+            ),
+      orElse: () => <String, bool>{},
     );
 
     return Positioned(

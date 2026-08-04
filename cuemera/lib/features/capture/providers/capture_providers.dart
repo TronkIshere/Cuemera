@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/camera_service.dart';
 import '../../album/domain/models/shot.dart';
-import '../../goal_selection/providers/goal_providers.dart';
+import '../../reference_photo/providers/reference_providers.dart';
 import '../../scene_analysis/providers/scene_providers.dart';
 import '../domain/shot_builder.dart';
 import '../services/auto_capture_service.dart';
@@ -17,8 +17,19 @@ final shouldCaptureProvider = Provider<bool>((ref) {
   final scene = ref.watch(sceneProfileProvider);
   final trackingProgress = ref.watch(trackingProgressProvider);
   final autoCaptureService = ref.watch(autoCaptureServiceProvider);
+  final referenceAsync = ref.watch(referenceProfileProvider);
+  final tolerance = ref.watch(toleranceSettingsProvider);
 
-  return autoCaptureService.shouldCapture(subject, scene, trackingProgress);
+  final reference = referenceAsync.valueOrNull;
+  if (reference == null) return false;
+
+  return autoCaptureService.shouldCapture(
+    subject,
+    scene,
+    reference,
+    tolerance,
+    trackingProgress,
+  );
 });
 
 final autoCaptureProvider = Provider<void>((ref) {
@@ -28,18 +39,22 @@ final autoCaptureProvider = Provider<void>((ref) {
   ref.listen<bool>(shouldCaptureProvider, (previous, shouldCapture) async {
     if (shouldCapture != true) return;
 
+    final referenceAsync = ref.read(referenceProfileProvider);
+    final reference = referenceAsync.valueOrNull;
+    if (reference == null) return;
+    final tolerance = ref.read(toleranceSettingsProvider);
+
     await autoCaptureService.triggerCapture();
 
     final subject = ref.read(subjectProfileProvider);
     final scene = ref.read(sceneProfileProvider);
-    final goal = ref.read(selectedGoalProvider);
-    if (goal == null) return;
 
     final shot = buildShotFromCapture(
       imagePath: null,
       subject: subject,
       scene: scene,
-      goal: goal,
+      reference: reference,
+      tolerance: tolerance,
       shotType: 'hero',
     );
 

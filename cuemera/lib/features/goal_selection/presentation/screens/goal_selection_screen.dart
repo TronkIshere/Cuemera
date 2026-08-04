@@ -11,8 +11,6 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../../album/presentation/screens/album_screen.dart';
 import '../../../camera_session/presentation/screens/camera_screen.dart';
-import '../../domain/models/photography_goal.dart';
-import '../../providers/goal_providers.dart';
 import '../widgets/goal_card.dart';
 
 class GoalSelectionScreen extends ConsumerWidget {
@@ -42,10 +40,6 @@ class GoalSelectionScreen extends ConsumerWidget {
                   colors: colors,
                   isPrimary: false,
                   onTap: () {
-                    if (ref.read(selectedGoalProvider) == null) {
-                      ref.read(selectedGoalProvider.notifier).state =
-                          PhotographyGoal.values.first;
-                    }
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const CameraScreen()),
                     );

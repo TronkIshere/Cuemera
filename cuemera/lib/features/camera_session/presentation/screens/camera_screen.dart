@@ -2,7 +2,6 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
-import 'package:cuemera/core/constants/app_typography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
+import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
@@ -20,9 +20,8 @@ import '../../../album/providers/album_providers.dart';
 import '../../../capture/domain/shot_builder.dart';
 import '../../../capture/providers/capture_providers.dart';
 import '../../../editorial_score/providers/score_providers.dart';
-import '../../../goal_selection/domain/models/photography_goal.dart';
-import '../../../goal_selection/presentation/screens/goal_selection_screen.dart';
-import '../../../goal_selection/providers/goal_providers.dart';
+import '../../../reference_photo/presentation/widgets/reference_picker_sheet.dart';
+import '../../../reference_photo/providers/reference_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
 import '../../../scene_analysis/services/face_analyzer.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
@@ -32,8 +31,6 @@ import '../widgets/album_button.dart';
 import '../widgets/camera_preview_layer.dart';
 import '../widgets/camera_top_nav_bar.dart';
 import '../widgets/debug_perf_overlay.dart';
-import '../widgets/goal_pill.dart';
-import '../widgets/phrase_chip.dart';
 
 enum _CameraInitState { loading, ready, error }
 
@@ -73,13 +70,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final goal = ref.read(selectedGoalProvider);
-      if (goal == null) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const GoalSelectionScreen()),
-        );
-        return;
-      }
       _initCamera();
     });
   }
@@ -142,16 +132,20 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final imagePath = await cameraService.capture();
     if (!mounted) return;
 
+    final referenceAsync = ref.read(referenceProfileProvider);
+    final reference = referenceAsync.valueOrNull;
+    if (reference == null) return;
+    final tolerance = ref.read(toleranceSettingsProvider);
+
     final subject = ref.read(subjectProfileProvider);
     final scene = ref.read(sceneProfileProvider);
-    final goal = ref.read(selectedGoalProvider);
-    if (goal == null) return;
 
     final shot = buildShotFromCapture(
       imagePath: imagePath,
       subject: subject,
       scene: scene,
-      goal: goal,
+      reference: reference,
+      tolerance: tolerance,
       shotType: 'hero',
     );
 
@@ -175,59 +169,37 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   void _onModeSelectorTap() {}
 
-  void _onReferencePhotoTap() {}
+  void _onReferencePhotoTap() {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    _showReferencePicker(colors);
+  }
 
-  Future<void> _showGoalPicker(AppColors colors) {
+  Future<void> _showReferencePicker(AppColors colors) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
+      isScrollControlled: true,
       builder: (sheetContext) {
-        final selectedGoal = ref.read(selectedGoalProvider);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: colors.textMuted.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                ...PhotographyGoal.values.map((goal) {
-                  final isSelected = goal == selectedGoal;
-                  return ListTile(
-                    onTap: () {
-                      ref.read(selectedGoalProvider.notifier).state = goal;
-                      Navigator.of(sheetContext).pop();
-                    },
-                    title: Text(
-                      goal.name,
-                      style: AppTypography.body(colors).copyWith(
-                        color: isSelected ? colors.accent : colors.text,
-                        fontWeight: isSelected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                      ),
-                    ),
-                    trailing: isSelected
-                        ? Icon(Icons.check, color: colors.accent, size: 18)
-                        : null,
-                  );
-                }),
-              ],
-            ),
-          ),
-        );
+        return const ReferencePickerSheet();
       },
     );
+  }
+
+  Future<void> _flipCamera() async {
+    final cameraService = ref.read(cameraServiceProvider);
+    if (!cameraService.hasMultipleCameras) return;
+
+    await cameraService.stopImageStream();
+    await cameraService.switchLens();
+
+    if (!mounted) return;
+    setState(() {});
+
+    if (!mounted) return;
+    await cameraService.startImageStream(_onFrame);
   }
 
   Future<void> _onScaleStart(ScaleStartDetails details) async {
@@ -404,7 +376,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final nextAction = ref.watch(nextActionProvider);
     final score = ref.watch(currentScoreProvider);
     final trackingProgress = ref.watch(trackingProgressProvider);
-    final selectedGoal = ref.watch(selectedGoalProvider);
+    final selectedReferencePath = ref.watch(selectedReferenceImagePathProvider);
 
     final hasZone =
         subject.bodyRatio != null || subject.shoulderAngleDegrees != null;
@@ -413,10 +385,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     const navBarHeight = 44.0;
-    const goalPillRowHeight = 32.0;
     final clusterTop = topInset + AppSpacing.xs;
     final secondRowTop = clusterTop + navBarHeight + AppSpacing.sm;
-    final phraseChipTop = secondRowTop + goalPillRowHeight + AppSpacing.sm;
+    final phraseChipTop = secondRowTop + AppSpacing.sm;
 
     return Stack(
       fit: StackFit.expand,
@@ -444,23 +415,59 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             onAdjustmentsTap: _onAdjustmentsTap,
             onModeSelectorTap: _onModeSelectorTap,
             onReferencePhotoTap: _onReferencePhotoTap,
+            onFlipCameraTap: _flipCamera,
+            canFlipCamera: cameraService.hasMultipleCameras,
           ),
         ),
-        Positioned(
-          top: secondRowTop,
-          left: AppSpacing.md,
-          child: GoalPill(
-            colors: colors,
-            selectedGoal: selectedGoal,
-            onTap: () => _showGoalPicker(colors),
+        if (selectedReferencePath == null)
+          Positioned(
+            top: secondRowTop,
+            left: AppSpacing.md,
+            right: AppSpacing.md,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.surface.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: colors.accent, width: 1.5),
+                ),
+                child: Text(
+                  'Tap the reference icon to choose a photo',
+                  style: AppTypography.caption(
+                    colors,
+                  ).copyWith(color: colors.accent),
+                ),
+              ),
+            ),
           ),
-        ),
         if (nextAction != null)
           Positioned(
             top: phraseChipTop,
             left: AppSpacing.md,
             right: AppSpacing.md,
-            child: PhraseChip(colors: colors, phrase: nextAction.phrase),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.surface.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: colors.accent, width: 1.5),
+                ),
+                child: Text(
+                  nextAction.phrase,
+                  style: AppTypography.body(
+                    colors,
+                  ).copyWith(color: colors.accent, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
           ),
         Positioned(
           top: secondRowTop,

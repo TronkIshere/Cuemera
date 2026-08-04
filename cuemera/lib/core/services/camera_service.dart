@@ -15,6 +15,13 @@ class CameraService {
   bool get isInitialized => _controller?.value.isInitialized ?? false;
   bool get isPreviewInitialized =>
       _previewController?.value.isInitialized ?? false;
+  bool get hasMultipleCameras => _cameras.length > 1;
+
+  double _minZoom = 1.0;
+  double _maxZoom = 1.0;
+
+  double get minZoom => _minZoom;
+  double get maxZoom => _maxZoom;
 
   Future<void> init() async {
     _cameras = await availableCameras();
@@ -32,12 +39,6 @@ class CameraService {
     );
     await _controller!.initialize();
   }
-
-  double _minZoom = 1.0;
-  double _maxZoom = 1.0;
-
-  double get minZoom => _minZoom;
-  double get maxZoom => _maxZoom;
 
   Future<void> initPreviewController() async {
     if (_cameras.isEmpty) return;
@@ -98,6 +99,7 @@ class CameraService {
     if (_cameras.length < 2) return;
     _lensIndex = (_lensIndex + 1) % _cameras.length;
     await _createController(_cameras[_lensIndex]);
+    await initPreviewController();
   }
 
   Future<void> startImageStream(

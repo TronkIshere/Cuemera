@@ -4,18 +4,31 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/tts_service.dart';
-import '../../goal_selection/providers/goal_providers.dart';
+import '../../reference_photo/providers/reference_providers.dart';
 import '../../scene_analysis/providers/scene_providers.dart';
 import '../domain/priority_engine.dart';
+import '../domain/reference_comparison_engine.dart';
+
+final referenceComparisonEngineProvider = Provider<ReferenceComparisonEngine>(
+  (ref) => ReferenceComparisonEngine(),
+);
 
 final nextActionProvider = Provider<PriorityAction?>((ref) {
   final subject = ref.watch(subjectProfileProvider);
   final scene = ref.watch(sceneProfileProvider);
-  final goal = ref.watch(selectedGoalProvider);
+  final referenceAsync = ref.watch(referenceProfileProvider);
+  final tolerance = ref.watch(toleranceSettingsProvider);
+  final engine = ref.watch(referenceComparisonEngineProvider);
 
-  if (goal == null) return null;
+  final reference = referenceAsync.valueOrNull;
+  if (reference == null) return null;
 
-  return getNextAction(subject, scene, goal);
+  return engine.evaluate(
+    subject: subject,
+    scene: scene,
+    reference: reference,
+    tolerance: tolerance,
+  );
 });
 
 final voiceDirectorListenerProvider = Provider<void>((ref) {

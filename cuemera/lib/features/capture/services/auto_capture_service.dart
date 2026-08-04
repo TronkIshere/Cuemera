@@ -1,4 +1,7 @@
 // features/capture/services/auto_capture_service.dart
+import '../../reference_photo/domain/comparison_math.dart';
+import '../../reference_photo/domain/models/reference_profile.dart';
+import '../../reference_photo/domain/models/tolerance_settings.dart';
 import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
 
@@ -10,17 +13,15 @@ class AutoCaptureService {
   bool shouldCapture(
     SubjectProfile subject,
     SceneProfile scene,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
     double trackingProgress,
   ) {
     if (subject.eyesOpen == false) return false;
     if (scene.brightness < 0.2) return false;
 
-    final shoulderOk =
-        subject.shoulderAngleDegrees == null ||
-        subject.shoulderAngleDegrees!.abs() < 15;
-    final faceOk =
-        subject.faceAngleDegrees == null ||
-        subject.faceAngleDegrees!.abs() < 20;
+    final shoulderOk = _shoulderOk(subject, reference, tolerance);
+    final faceOk = _faceOk(subject, reference, tolerance);
     final backgroundOk = scene.backgroundClutterCount <= 5;
 
     if (!shoulderOk || !faceOk || !backgroundOk) return false;
@@ -42,14 +43,12 @@ class AutoCaptureService {
   Map<String, bool> debugConditionBreakdown(
     SubjectProfile subject,
     SceneProfile scene,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
     double trackingProgress,
   ) {
-    final shoulderOk =
-        subject.shoulderAngleDegrees == null ||
-        subject.shoulderAngleDegrees!.abs() < 15;
-    final faceOk =
-        subject.faceAngleDegrees == null ||
-        subject.faceAngleDegrees!.abs() < 20;
+    final shoulderOk = _shoulderOk(subject, reference, tolerance);
+    final faceOk = _faceOk(subject, reference, tolerance);
     final backgroundOk = scene.backgroundClutterCount <= 5;
     final cooldownOk =
         _lastCapture == null ||
@@ -64,5 +63,33 @@ class AutoCaptureService {
       'trackingProgress': trackingProgress >= _minTrackingProgress,
       'cooldown': cooldownOk,
     };
+  }
+
+  bool _shoulderOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.shoulderAngleDegrees;
+    final referenceValue = reference.shoulderAngleDegrees;
+    if (subjectValue == null || referenceValue == null) return true;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _faceOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.faceAngleDegrees;
+    final referenceValue = reference.faceAngleDegrees;
+    if (subjectValue == null || referenceValue == null) return true;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
 }
