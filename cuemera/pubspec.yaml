@@ -27,9 +27,15 @@ dependencies:
   image: ^4.2.0
   palette_generator: ^0.3.3+3
   image_picker: ^1.1.2
+  flutter_launcher_icons: ^0.14.1
 
 assets:
   - assets/images/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
 
 dev_dependencies:
   flutter_test:
