@@ -1,4 +1,6 @@
 // features/reference_photo/domain/models/reference_profile.dart
+import 'dart:ui' show Offset;
+
 class ReferenceProfile {
   const ReferenceProfile({
     required this.imagePath,
@@ -12,6 +14,10 @@ class ReferenceProfile {
     this.dominantHue,
     this.warmthScore,
     this.overallBrightness,
+    this.poseLandmarkPoints,
+    this.faceContourPoints,
+    this.imageWidth,
+    this.imageHeight,
   });
 
   final String imagePath;
@@ -25,6 +31,10 @@ class ReferenceProfile {
   final double? dominantHue;
   final double? warmthScore;
   final double? overallBrightness;
+  final List<Offset?>? poseLandmarkPoints;
+  final List<Offset>? faceContourPoints;
+  final double? imageWidth;
+  final double? imageHeight;
 
   ReferenceProfile copyWith({
     String? imagePath,
@@ -38,6 +48,10 @@ class ReferenceProfile {
     double? dominantHue,
     double? warmthScore,
     double? overallBrightness,
+    List<Offset?>? poseLandmarkPoints,
+    List<Offset>? faceContourPoints,
+    double? imageWidth,
+    double? imageHeight,
   }) {
     return ReferenceProfile(
       imagePath: imagePath ?? this.imagePath,
@@ -52,6 +66,10 @@ class ReferenceProfile {
       dominantHue: dominantHue ?? this.dominantHue,
       warmthScore: warmthScore ?? this.warmthScore,
       overallBrightness: overallBrightness ?? this.overallBrightness,
+      poseLandmarkPoints: poseLandmarkPoints ?? this.poseLandmarkPoints,
+      faceContourPoints: faceContourPoints ?? this.faceContourPoints,
+      imageWidth: imageWidth ?? this.imageWidth,
+      imageHeight: imageHeight ?? this.imageHeight,
     );
   }
 }

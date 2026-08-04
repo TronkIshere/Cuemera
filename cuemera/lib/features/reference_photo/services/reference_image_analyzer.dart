@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:cuemera/features/reference_photo/domain/models/reference_profile.dart';
-import 'package:flutter/material.dart' show HSLColor;
+import 'package:flutter/material.dart' show HSLColor, Offset;
 import 'package:flutter/painting.dart' show FileImage;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
@@ -17,6 +17,7 @@ class ReferenceImageAnalyzer {
 
     double? bodyRatio;
     double? shoulderAngleDegrees;
+    List<Offset?>? poseLandmarkPoints;
     final poseDetector = PoseDetector(options: PoseDetectorOptions());
     try {
       final poses = await poseDetector.processImage(inputImage);
@@ -39,6 +40,33 @@ class ReferenceImageAnalyzer {
           final lowerLength = (leftAnkle.y - leftHip.y).abs();
           if (lowerLength > 0) bodyRatio = upperLength / lowerLength;
         }
+
+        const landmarkTypesToDraw = [
+          PoseLandmarkType.nose,
+          PoseLandmarkType.leftEye,
+          PoseLandmarkType.rightEye,
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+          PoseLandmarkType.leftElbow,
+          PoseLandmarkType.rightElbow,
+          PoseLandmarkType.leftWrist,
+          PoseLandmarkType.rightWrist,
+          PoseLandmarkType.leftHip,
+          PoseLandmarkType.rightHip,
+          PoseLandmarkType.leftKnee,
+          PoseLandmarkType.rightKnee,
+          PoseLandmarkType.leftAnkle,
+          PoseLandmarkType.rightAnkle,
+        ];
+        const minLandmarkLikelihood = 0.6;
+        final points = <Offset?>[];
+        for (final type in landmarkTypesToDraw) {
+          final landmark = landmarks[type];
+          final isConfident =
+              landmark != null && landmark.likelihood >= minLandmarkLikelihood;
+          points.add(isConfident ? Offset(landmark.x, landmark.y) : null);
+        }
+        if (points.any((p) => p != null)) poseLandmarkPoints = points;
       }
     } catch (_) {
     } finally {
@@ -47,6 +75,7 @@ class ReferenceImageAnalyzer {
 
     double? faceAngleDegrees;
     String? expression;
+    List<Offset>? faceContourPoints;
     final faceDetector = FaceDetector(
       options: FaceDetectorOptions(enableClassification: true),
     );
@@ -65,6 +94,13 @@ class ReferenceImageAnalyzer {
             expression = 'serious';
           }
         }
+        final box = face.boundingBox;
+        faceContourPoints = [
+          Offset(box.left, box.top),
+          Offset(box.right, box.top),
+          Offset(box.right, box.bottom),
+          Offset(box.left, box.bottom),
+        ];
       }
     } catch (_) {
     } finally {
@@ -87,9 +123,15 @@ class ReferenceImageAnalyzer {
     }
 
     img.Image? decoded;
+    double? imageWidth;
+    double? imageHeight;
     try {
       final bytes = await File(imagePath).readAsBytes();
       decoded = img.decodeImage(bytes);
+      if (decoded != null) {
+        imageWidth = decoded.width.toDouble();
+        imageHeight = decoded.height.toDouble();
+      }
     } catch (_) {}
 
     if (mask != null) {
@@ -134,6 +176,10 @@ class ReferenceImageAnalyzer {
       dominantHue: dominantHue,
       warmthScore: warmthScore,
       overallBrightness: overallBrightness,
+      poseLandmarkPoints: poseLandmarkPoints,
+      faceContourPoints: faceContourPoints,
+      imageWidth: imageWidth,
+      imageHeight: imageHeight,
     );
   }
 
