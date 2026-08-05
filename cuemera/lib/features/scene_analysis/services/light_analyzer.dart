@@ -23,6 +23,7 @@ class LightAnalyzer {
     );
     final negativeSpaceScore = _estimateNegativeSpace(image, segmentationMask);
     final symmetryScore = _estimateSymmetry(image, segmentationMask, subject);
+    final (hue, warmth) = _estimateColorTone(image);
 
     return previous.copyWith(
       brightness: brightness,
@@ -30,7 +31,9 @@ class LightAnalyzer {
       negativeSpaceScore: negativeSpaceScore,
       symmetryScore: symmetryScore,
       backgroundClutterCount: backgroundClutterCount,
-      depthEstimate: _estimateDepth(),
+      depthEstimate: _estimateDepth(image, segmentationMask),
+      liveWarmthScore: warmth,
+      liveDominantHue: hue,
     );
   }
 
@@ -255,7 +258,104 @@ class LightAnalyzer {
     return clutterScore.round();
   }
 
-  double? _estimateDepth() {
-    return null;
+  double? _estimateDepth(CameraImage image, SegmentationMask? mask) {
+    if (mask == null) return null;
+
+    final confidences = mask.confidences;
+    if (confidences.isEmpty) return null;
+
+    int subjectPixels = 0;
+    for (final confidence in confidences) {
+      if (confidence > 0.5) subjectPixels++;
+    }
+
+    final total = confidences.length;
+    final subjectRatio = total == 0 ? 0.0 : subjectPixels / total;
+
+    final plane = image.planes.first;
+    final bytes = plane.bytes;
+    final width = image.width;
+    final height = image.height;
+    final bytesPerRow = plane.bytesPerRow;
+    final maskWidth = mask.width;
+
+    const stepX = 6;
+    const stepY = 6;
+
+    double varianceSum = 0;
+    int sampleCount = 0;
+    int? previousValue;
+
+    for (var y = 0; y < height; y += stepY) {
+      final rowOffset = y * bytesPerRow;
+      if (rowOffset >= bytes.length) continue;
+
+      for (var x = 0; x < width; x += stepX) {
+        final index = rowOffset + x;
+        if (index >= bytes.length) continue;
+
+        bool isBackground = true;
+        final maskIndex = y * maskWidth + x;
+        if (maskIndex < confidences.length && confidences[maskIndex] > 0.5) {
+          isBackground = false;
+        }
+
+        if (!isBackground) continue;
+
+        final value = bytes[index];
+        if (previousValue != null) {
+          final diff = (value - previousValue).abs();
+          varianceSum += diff;
+          sampleCount++;
+        }
+        previousValue = value;
+      }
+      previousValue = null;
+    }
+
+    final avgVariance = sampleCount == 0 ? 0.0 : varianceSum / sampleCount;
+    final normalizedVariance = (avgVariance / 20.0).clamp(0.0, 1.0);
+    final sharpnessDepthSignal = 1.0 - normalizedVariance;
+
+    return ((subjectRatio + sharpnessDepthSignal) / 2.0).clamp(0.0, 1.0);
+  }
+
+  (double?, double?) _estimateColorTone(CameraImage image) {
+    if (image.planes.length < 3) return (null, null);
+
+    final uBytes = image.planes[1].bytes;
+    final vBytes = image.planes[2].bytes;
+    if (uBytes.isEmpty || vBytes.isEmpty) return (null, null);
+
+    final uSampleStep = (uBytes.length / 2000).clamp(1, uBytes.length).toInt();
+    int uSum = 0;
+    int uCount = 0;
+    for (var i = 0; i < uBytes.length; i += uSampleStep) {
+      uSum += uBytes[i];
+      uCount++;
+    }
+
+    final vSampleStep = (vBytes.length / 2000).clamp(1, vBytes.length).toInt();
+    int vSum = 0;
+    int vCount = 0;
+    for (var i = 0; i < vBytes.length; i += vSampleStep) {
+      vSum += vBytes[i];
+      vCount++;
+    }
+
+    if (uCount == 0 || vCount == 0) return (null, null);
+
+    final avgU = uSum / uCount;
+    final avgV = vSum / vCount;
+
+    final centeredU = avgU - 128;
+    final centeredV = avgV - 128;
+
+    final normalizedWarmth = (centeredV / 128).clamp(-1.0, 1.0);
+    final warmth = (((normalizedWarmth + 1.0) / 2.0)).clamp(0.0, 1.0);
+
+    final hue = _atan2Degrees(centeredV, centeredU);
+
+    return (hue, warmth);
   }
 }

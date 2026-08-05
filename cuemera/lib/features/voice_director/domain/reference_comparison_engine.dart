@@ -54,6 +54,14 @@ class ReferenceComparisonEngine {
     );
     if (brightnessEvaluation != null) candidates.add(brightnessEvaluation);
 
+    final backgroundClutterEvaluation = _evaluateBackgroundClutter(
+      scene,
+      reference,
+      tolerance,
+    );
+    if (backgroundClutterEvaluation != null)
+      candidates.add(backgroundClutterEvaluation);
+
     final exceeding = candidates
         .where((candidate) => candidate.deviationExceedsThreshold)
         .toList();
@@ -250,6 +258,44 @@ class ReferenceComparisonEngine {
     final phrase = subjectValue > referenceValue
         ? 'Move to softer light, like your reference'
         : 'Find more light, like your reference';
+
+    return _AttributeEvaluation(
+      severity: (normalizedSeverity * 10).round(),
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      phrase: phrase,
+    );
+  }
+
+  _AttributeEvaluation? _evaluateBackgroundClutter(
+    SceneProfile scene,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final referenceValue = reference.backgroundClutterCount;
+    if (referenceValue == null) return null;
+
+    final subjectValue = (scene.backgroundClutterCount / 10).clamp(0.0, 1.0);
+    final normalizedReferenceValue = (referenceValue / 10).clamp(0.0, 1.0);
+
+    final deviation = ComparisonMath.deviation(
+      subjectValue,
+      normalizedReferenceValue,
+    );
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForComposition,
+    );
+    final thresholdForComposition = ComparisonMath.thresholdForComposition(
+      tolerance.compositionTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForComposition,
+    );
+
+    final phrase = subjectValue > normalizedReferenceValue
+        ? 'Clean up the background, like your reference'
+        : 'Add some background interest, like your reference';
 
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),

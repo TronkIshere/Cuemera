@@ -22,9 +22,12 @@ class AutoCaptureService {
 
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
     final faceOk = _faceOk(subject, reference, tolerance);
+    final facePitchOk = _facePitchOk(subject, reference, tolerance);
+    final faceRollOk = _faceRollOk(subject, reference, tolerance);
     final backgroundOk = scene.backgroundClutterCount <= 5;
 
-    if (!shoulderOk || !faceOk || !backgroundOk) return false;
+    if (!shoulderOk || !faceOk || !facePitchOk || !faceRollOk || !backgroundOk)
+      return false;
 
     if (trackingProgress < _minTrackingProgress) return false;
 
@@ -49,6 +52,8 @@ class AutoCaptureService {
   ) {
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
     final faceOk = _faceOk(subject, reference, tolerance);
+    final facePitchOk = _facePitchOk(subject, reference, tolerance);
+    final faceRollOk = _faceRollOk(subject, reference, tolerance);
     final backgroundOk = scene.backgroundClutterCount <= 5;
     final cooldownOk =
         _lastCapture == null ||
@@ -59,6 +64,8 @@ class AutoCaptureService {
       'brightness': scene.brightness >= 0.2,
       'shoulderAngle': shoulderOk,
       'faceAngle': faceOk,
+      'facePitch': facePitchOk,
+      'faceRoll': faceRollOk,
       'backgroundClutter': backgroundOk,
       'trackingProgress': trackingProgress >= _minTrackingProgress,
       'cooldown': cooldownOk,
@@ -87,6 +94,36 @@ class AutoCaptureService {
     final subjectValue = subject.faceAngleDegrees;
     if (subjectValue == null) return false;
     final referenceValue = reference.faceAngleDegrees;
+    if (referenceValue == null) return true;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _facePitchOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.faceAngleXDegrees;
+    if (subjectValue == null) return false;
+    final referenceValue = reference.faceAngleXDegrees;
+    if (referenceValue == null) return true;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _faceRollOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.faceAngleZDegrees;
+    if (subjectValue == null) return false;
+    final referenceValue = reference.faceAngleZDegrees;
     if (referenceValue == null) return true;
 
     final deviation = ComparisonMath.deviation(subjectValue, referenceValue);

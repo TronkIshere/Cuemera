@@ -7,6 +7,8 @@ class SceneProfile {
     required this.symmetryScore,
     required this.backgroundClutterCount,
     this.depthEstimate,
+    this.liveWarmthScore,
+    this.liveDominantHue,
   });
 
   final double brightness;
@@ -15,6 +17,8 @@ class SceneProfile {
   final double symmetryScore;
   final int backgroundClutterCount;
   final double? depthEstimate;
+  final double? liveWarmthScore;
+  final double? liveDominantHue;
 
   SceneProfile copyWith({
     double? brightness,
@@ -23,6 +27,8 @@ class SceneProfile {
     double? symmetryScore,
     int? backgroundClutterCount,
     double? depthEstimate,
+    double? liveWarmthScore,
+    double? liveDominantHue,
   }) {
     return SceneProfile(
       brightness: brightness ?? this.brightness,
@@ -33,6 +39,8 @@ class SceneProfile {
       backgroundClutterCount:
           backgroundClutterCount ?? this.backgroundClutterCount,
       depthEstimate: depthEstimate ?? this.depthEstimate,
+      liveWarmthScore: liveWarmthScore ?? this.liveWarmthScore,
+      liveDominantHue: liveDominantHue ?? this.liveDominantHue,
     );
   }
 }

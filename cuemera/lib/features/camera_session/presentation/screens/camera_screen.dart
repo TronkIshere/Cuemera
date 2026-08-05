@@ -5,7 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
+import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
@@ -54,6 +54,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   final FaceAnalyzer _faceAnalyzer = FaceAnalyzer();
   final LightAnalyzer _lightAnalyzer = LightAnalyzer();
 
+  SegmentationMask? _latestMask;
+  StreamSubscription<MlKitAnalysisResult>? _mlKitSubscription;
+
   bool _wasStreamingBeforePause = false;
 
   double _baseZoom = 1.0;
@@ -85,6 +88,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       await cameraService.initPreviewController();
       await cameraService.startImageStream(_onFrame);
 
+      _mlKitSubscription = ref.read(mlKitServiceProvider).analysisStream.listen(
+        (result) {
+          _latestMask = result.segmentationMask;
+        },
+      );
+
       if (!mounted) return;
       setState(() => _state = _CameraInitState.ready);
     } catch (e) {
@@ -110,7 +119,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final trackingEngine = ref.read(trackingEngineProvider);
 
     final previousScene = ref.read(sceneProfileProvider);
-    final rawScene = _lightAnalyzer.analyzeLight(image, previousScene);
+    final rawScene = _lightAnalyzer.analyzeLight(
+      image,
+      previousScene,
+      segmentationMask: _latestMask,
+      subject: ref.read(subjectProfileProvider),
+    );
     final smoothedScene = trackingEngine.smoothScene(rawScene, previousScene);
     ref.read(sceneProfileProvider.notifier).state = smoothedScene;
 
@@ -283,6 +297,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   void dispose() {
     final cameraService = ref.read(cameraServiceProvider);
     _focusRingTimer?.cancel();
+    _mlKitSubscription?.cancel();
     cameraService.stopImageStream();
     WidgetsBinding.instance.removeObserver(this);
     cameraService.dispose();
@@ -398,6 +413,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           onScaleStart: _onScaleStart,
           onScaleUpdate: _onScaleUpdate,
           onTapUp: _onTapUp,
+          hasCaptured: _hasCaptured,
         ),
         if (kDebugMode) DebugPerfOverlay(key: _debugPerfOverlayKey),
         Positioned(

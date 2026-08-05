@@ -46,11 +46,13 @@ final autoCaptureProvider = Provider<void>((ref) {
 
     await autoCaptureService.triggerCapture();
 
+    final imagePath = await cameraService.capture();
+
     final subject = ref.read(subjectProfileProvider);
     final scene = ref.read(sceneProfileProvider);
 
     final shot = buildShotFromCapture(
-      imagePath: null,
+      imagePath: imagePath,
       subject: subject,
       scene: scene,
       reference: reference,

@@ -11,7 +11,11 @@ import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentatio
 import 'package:image/image.dart' as img;
 import 'package:palette_generator/palette_generator.dart';
 
+import '../domain/comparison_math.dart';
+
 class ReferenceImageAnalyzer {
+  static const double _minLandmarkLikelihood = 0.6;
+
   Future<ReferenceProfile> analyze(String imagePath) async {
     final inputImage = InputImage.fromFilePath(imagePath);
 
@@ -58,12 +62,11 @@ class ReferenceImageAnalyzer {
           PoseLandmarkType.leftAnkle,
           PoseLandmarkType.rightAnkle,
         ];
-        const minLandmarkLikelihood = 0.6;
         final points = <Offset?>[];
         for (final type in landmarkTypesToDraw) {
           final landmark = landmarks[type];
           final isConfident =
-              landmark != null && landmark.likelihood >= minLandmarkLikelihood;
+              landmark != null && landmark.likelihood >= _minLandmarkLikelihood;
           points.add(isConfident ? Offset(landmark.x, landmark.y) : null);
         }
         if (points.any((p) => p != null)) poseLandmarkPoints = points;
@@ -74,26 +77,54 @@ class ReferenceImageAnalyzer {
     }
 
     double? faceAngleDegrees;
+    double? faceAngleXDegrees;
+    double? faceAngleZDegrees;
     String? expression;
+    double? smilingProbability;
+    double? leftEyeOpenProbability;
+    double? rightEyeOpenProbability;
     List<Offset>? faceContourPoints;
+    List<Offset>? faceOvalPoints;
+    List<Offset>? leftEyeContour;
+    List<Offset>? rightEyeContour;
+    List<Offset>? leftEyebrowTopContour;
+    List<Offset>? rightEyebrowTopContour;
+    List<Offset>? upperLipTopContour;
+    List<Offset>? upperLipBottomContour;
+    List<Offset>? lowerLipTopContour;
+    List<Offset>? lowerLipBottomContour;
+    List<Offset>? noseBridgeContour;
+    List<Offset>? noseBottomContour;
+    double? mouthOpenRatio;
+    double? eyeOpenRatio;
+
     final faceDetector = FaceDetector(
-      options: FaceDetectorOptions(enableClassification: true),
+      options: FaceDetectorOptions(
+        enableClassification: true,
+        enableContours: true,
+        enableLandmarks: true,
+        enableTracking: false,
+        performanceMode: FaceDetectorMode.accurate,
+      ),
     );
     try {
       final faces = await faceDetector.processImage(inputImage);
       if (faces.isNotEmpty) {
         final face = faces.first;
         faceAngleDegrees = face.headEulerAngleY;
-        final smileProb = face.smilingProbability;
-        if (smileProb != null) {
-          if (smileProb > 0.7) {
-            expression = 'smiling';
-          } else if (smileProb > 0.3) {
-            expression = 'neutral';
-          } else {
-            expression = 'serious';
-          }
-        }
+        faceAngleXDegrees = face.headEulerAngleX;
+        faceAngleZDegrees = face.headEulerAngleZ;
+
+        smilingProbability = face.smilingProbability;
+        leftEyeOpenProbability = face.leftEyeOpenProbability;
+        rightEyeOpenProbability = face.rightEyeOpenProbability;
+
+        expression = _classifyExpression(
+          smilingProbability: smilingProbability,
+          leftEyeOpenProbability: leftEyeOpenProbability,
+          rightEyeOpenProbability: rightEyeOpenProbability,
+        );
+
         final box = face.boundingBox;
         faceContourPoints = [
           Offset(box.left, box.top),
@@ -101,6 +132,44 @@ class ReferenceImageAnalyzer {
           Offset(box.right, box.bottom),
           Offset(box.left, box.bottom),
         ];
+
+        List<Offset>? contourPoints(FaceContourType type) {
+          final contour = face.contours[type];
+          final points = contour?.points;
+          if (points == null || points.isEmpty) return null;
+          return points
+              .map((p) => Offset(p.x.toDouble(), p.y.toDouble()))
+              .toList();
+        }
+
+        faceOvalPoints = contourPoints(FaceContourType.face);
+        leftEyeContour = contourPoints(FaceContourType.leftEye);
+        rightEyeContour = contourPoints(FaceContourType.rightEye);
+        leftEyebrowTopContour = contourPoints(FaceContourType.leftEyebrowTop);
+        rightEyebrowTopContour = contourPoints(FaceContourType.rightEyebrowTop);
+        upperLipTopContour = contourPoints(FaceContourType.upperLipTop);
+        upperLipBottomContour = contourPoints(FaceContourType.upperLipBottom);
+        lowerLipTopContour = contourPoints(FaceContourType.lowerLipTop);
+        lowerLipBottomContour = contourPoints(FaceContourType.lowerLipBottom);
+        noseBridgeContour = contourPoints(FaceContourType.noseBridge);
+        noseBottomContour = contourPoints(FaceContourType.noseBottom);
+
+        mouthOpenRatio = ComparisonMath.boundingBoxAspectRatio([
+          ...?upperLipTopContour,
+          ...?upperLipBottomContour,
+          ...?lowerLipTopContour,
+          ...?lowerLipBottomContour,
+        ]);
+
+        final leftEyeRatio = ComparisonMath.boundingBoxAspectRatio(
+          leftEyeContour,
+        );
+        final rightEyeRatio = ComparisonMath.boundingBoxAspectRatio(
+          rightEyeContour,
+        );
+        eyeOpenRatio = (leftEyeRatio != null && rightEyeRatio != null)
+            ? (leftEyeRatio + rightEyeRatio) / 2
+            : (leftEyeRatio ?? rightEyeRatio);
       }
     } catch (_) {
     } finally {
@@ -168,8 +237,13 @@ class ReferenceImageAnalyzer {
       imagePath: imagePath,
       bodyRatio: bodyRatio,
       faceAngleDegrees: faceAngleDegrees,
+      faceAngleXDegrees: faceAngleXDegrees,
+      faceAngleZDegrees: faceAngleZDegrees,
       shoulderAngleDegrees: shoulderAngleDegrees,
       expression: expression,
+      smilingProbability: smilingProbability,
+      leftEyeOpenProbability: leftEyeOpenProbability,
+      rightEyeOpenProbability: rightEyeOpenProbability,
       negativeSpaceScore: negativeSpaceScore,
       symmetryScore: symmetryScore,
       backgroundClutterCount: backgroundClutterCount,
@@ -178,9 +252,50 @@ class ReferenceImageAnalyzer {
       overallBrightness: overallBrightness,
       poseLandmarkPoints: poseLandmarkPoints,
       faceContourPoints: faceContourPoints,
+      faceOvalPoints: faceOvalPoints,
+      leftEyeContour: leftEyeContour,
+      rightEyeContour: rightEyeContour,
+      leftEyebrowTopContour: leftEyebrowTopContour,
+      rightEyebrowTopContour: rightEyebrowTopContour,
+      upperLipTopContour: upperLipTopContour,
+      upperLipBottomContour: upperLipBottomContour,
+      lowerLipTopContour: lowerLipTopContour,
+      lowerLipBottomContour: lowerLipBottomContour,
+      noseBridgeContour: noseBridgeContour,
+      noseBottomContour: noseBottomContour,
+      mouthOpenRatio: mouthOpenRatio,
+      eyeOpenRatio: eyeOpenRatio,
       imageWidth: imageWidth,
       imageHeight: imageHeight,
     );
+  }
+
+  /// Combines smile probability with eye-openness to produce a more
+  /// granular label than a single smiling/not-smiling split.
+  String? _classifyExpression({
+    double? smilingProbability,
+    double? leftEyeOpenProbability,
+    double? rightEyeOpenProbability,
+  }) {
+    if (smilingProbability == null) return null;
+
+    final eyeOpenValues = [
+      leftEyeOpenProbability,
+      rightEyeOpenProbability,
+    ].whereType<double>().toList();
+    final avgEyeOpen = eyeOpenValues.isEmpty
+        ? null
+        : eyeOpenValues.reduce((a, b) => a + b) / eyeOpenValues.length;
+
+    if (avgEyeOpen != null && avgEyeOpen < 0.25) {
+      return smilingProbability > 0.5 ? 'laughing_eyes_closed' : 'eyes_closed';
+    }
+
+    if (smilingProbability > 0.85) return 'big_smile';
+    if (smilingProbability > 0.6) return 'smiling';
+    if (smilingProbability > 0.35) return 'slight_smile';
+    if (smilingProbability > 0.15) return 'neutral';
+    return 'serious';
   }
 
   double? _estimateNegativeSpace(SegmentationMask mask) {

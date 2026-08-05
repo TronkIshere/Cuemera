@@ -27,9 +27,24 @@ EditorialScore calculateReferenceScore(
   final lighting = _lightingScore(scene, reference, tolerance);
   final expression = _expressionScore(subject, reference, tolerance);
 
-  final backgroundRaw =
-      1.0 - (scene.backgroundClutterCount / 10).clamp(0.0, 1.0);
-  final background = (backgroundRaw * 100).round();
+  final refBackgroundClutter = reference.backgroundClutterCount;
+  int background;
+  if (refBackgroundClutter != null) {
+    final sceneClutterNormalized = (scene.backgroundClutterCount / 10).clamp(
+      0.0,
+      1.0,
+    );
+    final refClutterNormalized = (refBackgroundClutter / 10).clamp(0.0, 1.0);
+    final deviation = ComparisonMath.deviation(
+      sceneClutterNormalized,
+      refClutterNormalized,
+    );
+    background = ((1.0 - deviation).clamp(0.0, 1.0) * 100).round();
+  } else {
+    final backgroundRaw =
+        1.0 - (scene.backgroundClutterCount / 10).clamp(0.0, 1.0);
+    background = (backgroundRaw * 100).round();
+  }
 
   final depthFactor = scene.depthEstimate != null ? 1.0 : 0.7;
   final story = (depthFactor * 75).round();
@@ -77,8 +92,11 @@ int _compositionScore(
 ) {
   final refNegativeSpace = reference.negativeSpaceScore;
   final refSymmetry = reference.symmetryScore;
+  final refBackgroundClutter = reference.backgroundClutterCount;
 
-  if (refNegativeSpace == null && refSymmetry == null) {
+  if (refNegativeSpace == null &&
+      refSymmetry == null &&
+      refBackgroundClutter == null) {
     return ((scene.negativeSpaceScore * 0.5 + scene.symmetryScore * 0.5) * 100)
         .round()
         .clamp(0, 100);
@@ -114,6 +132,24 @@ int _compositionScore(
     count++;
   }
 
+  if (refBackgroundClutter != null) {
+    final sceneClutterNormalized = (scene.backgroundClutterCount / 10).clamp(
+      0.0,
+      1.0,
+    );
+    final refClutterNormalized = (refBackgroundClutter / 10).clamp(0.0, 1.0);
+    final deviation = ComparisonMath.deviation(
+      sceneClutterNormalized,
+      refClutterNormalized,
+    );
+    sum += ComparisonMath.similarity(
+      deviation,
+      thresholdForComposition,
+      ComparisonMath.maxDeviationForComposition,
+    );
+    count++;
+  }
+
   return ((sum / count) * 100).round().clamp(0, 100);
 }
 
@@ -133,13 +169,48 @@ int _lightingScore(
   final thresholdForColor = ComparisonMath.thresholdForColor(
     tolerance.colorTolerance,
   );
-  final similarity = ComparisonMath.similarity(
+  final brightnessSimilarity = ComparisonMath.similarity(
     deviation,
     thresholdForColor,
     ComparisonMath.maxDeviationForColor,
   );
 
-  return (similarity * 100).round().clamp(0, 100);
+  final refWarmth = reference.warmthScore;
+  final sceneWarmth = scene.liveWarmthScore;
+  final refHue = reference.dominantHue;
+  final sceneHue = scene.liveDominantHue;
+
+  double sum = brightnessSimilarity;
+  int count = 1;
+
+  if (refWarmth != null && sceneWarmth != null) {
+    final warmthDeviation = ComparisonMath.deviation(sceneWarmth, refWarmth);
+    sum += ComparisonMath.similarity(
+      warmthDeviation,
+      thresholdForColor,
+      ComparisonMath.maxDeviationForColor,
+    );
+    count++;
+  }
+
+  if (refHue != null && sceneHue != null) {
+    final hueDeviation = ComparisonMath.circularDeviation(
+      sceneHue,
+      refHue,
+      360.0,
+    );
+    final thresholdForHue = ComparisonMath.thresholdForHue(
+      tolerance.colorTolerance,
+    );
+    sum += ComparisonMath.similarity(
+      hueDeviation,
+      thresholdForHue,
+      ComparisonMath.maxDeviationForHue,
+    );
+    count++;
+  }
+
+  return ((sum / count) * 100).round().clamp(0, 100);
 }
 
 int _expressionScore(
