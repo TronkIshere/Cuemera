@@ -1,15 +1,15 @@
 // features/scene_analysis/providers/scene_providers.dart
+import 'package:camera/camera.dart';
 import 'package:cuemera/core/services/tracking_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/camera_service.dart';
 import '../../../core/services/ml_kit_service.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
+import '../../reference_photo/providers/detection_thresholds_provider.dart';
 import '../../reference_photo/providers/reference_providers.dart';
 import '../domain/models/scene_profile.dart';
 import '../domain/models/subject_profile.dart';
 import '../services/face_analyzer.dart';
-import '../services/light_analyzer.dart';
 import '../services/pose_analyzer.dart';
 
 final subjectProfileProvider = StateProvider<SubjectProfile>((ref) {
@@ -25,12 +25,15 @@ final sceneProfileProvider = StateProvider<SceneProfile>((ref) {
   );
 });
 
+final onFrameCallbackProvider =
+    StateProvider<void Function(CameraImage image)?>((ref) => null);
+
 final poseAnalyzerProvider = Provider<PoseAnalyzer>((ref) => PoseAnalyzer());
 final faceAnalyzerProvider = Provider<FaceAnalyzer>((ref) => FaceAnalyzer());
-final lightAnalyzerProvider = Provider<LightAnalyzer>((ref) => LightAnalyzer());
-final trackingEngineProvider = Provider<TrackingEngine>(
-  (ref) => TrackingEngine(),
-);
+final trackingEngineProvider = Provider<TrackingEngine>((ref) {
+  final thresholds = ref.watch(detectionThresholdsProvider);
+  return TrackingEngine(thresholds: thresholds);
+});
 
 final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
   final current = ref.watch(subjectProfileProvider);
@@ -58,11 +61,32 @@ final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
   );
 });
 
+final targetSceneProfileProvider = Provider<SceneProfile>((ref) {
+  final referenceAsync = ref.watch(referenceProfileProvider);
+  final ReferenceProfile? reference = referenceAsync.valueOrNull;
+
+  return SceneProfile(
+    brightness: reference?.overallBrightness ?? 0.55,
+    negativeSpaceScore: 0.0,
+    symmetryScore: 0.0,
+    backgroundClutterCount: reference?.backgroundClutterCount ?? 5,
+  );
+});
+
 final trackingProgressProvider = Provider<double>((ref) {
   final current = ref.watch(subjectProfileProvider);
   final target = ref.watch(targetSubjectProfileProvider);
+  final scene = ref.watch(sceneProfileProvider);
+  final targetScene = ref.watch(targetSceneProfileProvider);
+  final tolerance = ref.watch(toleranceSettingsProvider);
   final trackingEngine = ref.watch(trackingEngineProvider);
-  return trackingEngine.trackingProgress(current, target);
+  return trackingEngine.trackingProgress(
+    current,
+    target,
+    scene,
+    targetScene,
+    tolerance,
+  );
 });
 
 final sceneAnalysisListenerProvider = Provider<void>((ref) {
@@ -87,21 +111,4 @@ final sceneAnalysisListenerProvider = Provider<void>((ref) {
   });
 
   ref.onDispose(subscription.cancel);
-});
-
-final lightAnalysisListenerProvider = Provider<void>((ref) {
-  final cameraService = ref.watch(cameraServiceProvider);
-  final lightAnalyzer = ref.watch(lightAnalyzerProvider);
-  final trackingEngine = ref.watch(trackingEngineProvider);
-
-  cameraService.startImageStream((image) {
-    final previous = ref.read(sceneProfileProvider);
-    final raw = lightAnalyzer.analyzeLight(image, previous);
-    final smoothed = trackingEngine.smoothScene(raw, previous);
-    ref.read(sceneProfileProvider.notifier).state = smoothed;
-  });
-
-  ref.onDispose(() {
-    cameraService.stopImageStream();
-  });
 });

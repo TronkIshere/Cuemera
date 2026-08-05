@@ -1,4 +1,4 @@
-// features/goal_selection/presentation/widgets/goal_card.dart
+// features/home/presentation/widgets/home_menu_card.dart
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
 
-class EditorialMenuCard extends StatefulWidget {
-  const EditorialMenuCard({
+class HomeMenuCard extends StatefulWidget {
+  const HomeMenuCard({
     super.key,
     required this.height,
     required this.icon,
@@ -27,10 +27,10 @@ class EditorialMenuCard extends StatefulWidget {
   final bool isPrimary;
 
   @override
-  State<EditorialMenuCard> createState() => _EditorialMenuCardState();
+  State<HomeMenuCard> createState() => _HomeMenuCardState();
 }
 
-class _EditorialMenuCardState extends State<EditorialMenuCard> {
+class _HomeMenuCardState extends State<HomeMenuCard> {
   bool _pressed = false;
 
   void _setPressed(bool value) {

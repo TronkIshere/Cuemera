@@ -1,11 +1,10 @@
 // features/capture/services/auto_capture_service.dart
 import '../../reference_photo/domain/comparison_math.dart';
+import '../../reference_photo/domain/models/detection_thresholds.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
 import '../../reference_photo/domain/models/tolerance_settings.dart';
 import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
-
-const double _minTrackingProgress = 0.9;
 
 class AutoCaptureService {
   DateTime? _lastCapture;
@@ -16,24 +15,27 @@ class AutoCaptureService {
     ReferenceProfile reference,
     ToleranceSettings tolerance,
     double trackingProgress,
+    DetectionThresholds thresholds,
   ) {
     if (subject.eyesOpen != true) return false;
-    if (scene.brightness < 0.2) return false;
+    if (scene.brightness < thresholds.minBrightnessForCapture) return false;
 
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
     final faceOk = _faceOk(subject, reference, tolerance);
     final facePitchOk = _facePitchOk(subject, reference, tolerance);
     final faceRollOk = _faceRollOk(subject, reference, tolerance);
-    final backgroundOk = scene.backgroundClutterCount <= 5;
+    final backgroundOk = _backgroundOk(scene, reference, tolerance, thresholds);
 
     if (!shoulderOk || !faceOk || !facePitchOk || !faceRollOk || !backgroundOk)
       return false;
 
-    if (trackingProgress < _minTrackingProgress) return false;
+    if (trackingProgress < thresholds.minTrackingProgressForCapture) {
+      return false;
+    }
 
     if (_lastCapture != null) {
       final elapsed = DateTime.now().difference(_lastCapture!);
-      if (elapsed.inMilliseconds < 1500) return false;
+      if (elapsed.inMilliseconds < thresholds.captureCooldownMs) return false;
     }
 
     return true;
@@ -49,25 +51,28 @@ class AutoCaptureService {
     ReferenceProfile reference,
     ToleranceSettings tolerance,
     double trackingProgress,
+    DetectionThresholds thresholds,
   ) {
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
     final faceOk = _faceOk(subject, reference, tolerance);
     final facePitchOk = _facePitchOk(subject, reference, tolerance);
     final faceRollOk = _faceRollOk(subject, reference, tolerance);
-    final backgroundOk = scene.backgroundClutterCount <= 5;
+    final backgroundOk = _backgroundOk(scene, reference, tolerance, thresholds);
     final cooldownOk =
         _lastCapture == null ||
-        DateTime.now().difference(_lastCapture!).inMilliseconds >= 1500;
+        DateTime.now().difference(_lastCapture!).inMilliseconds >=
+            thresholds.captureCooldownMs;
 
     return {
       'eyesOpen': subject.eyesOpen == true,
-      'brightness': scene.brightness >= 0.2,
+      'brightness': scene.brightness >= thresholds.minBrightnessForCapture,
       'shoulderAngle': shoulderOk,
       'faceAngle': faceOk,
       'facePitch': facePitchOk,
       'faceRoll': faceRollOk,
       'backgroundClutter': backgroundOk,
-      'trackingProgress': trackingProgress >= _minTrackingProgress,
+      'trackingProgress':
+          trackingProgress >= thresholds.minTrackingProgressForCapture,
       'cooldown': cooldownOk,
     };
   }
@@ -128,6 +133,34 @@ class AutoCaptureService {
 
     final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _backgroundOk(
+    SceneProfile scene,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+    DetectionThresholds thresholds,
+  ) {
+    final referenceValue = reference.backgroundClutterCount;
+    if (referenceValue == null) {
+      return scene.backgroundClutterCount <=
+          thresholds.defaultBackgroundClutterThreshold;
+    }
+
+    final sceneClutterNormalized = (scene.backgroundClutterCount / 10).clamp(
+      0.0,
+      1.0,
+    );
+    final referenceClutterNormalized = (referenceValue / 10).clamp(0.0, 1.0);
+
+    final deviation = ComparisonMath.deviation(
+      sceneClutterNormalized,
+      referenceClutterNormalized,
+    );
+    final threshold = ComparisonMath.thresholdForComposition(
+      tolerance.compositionTolerance,
+    );
     return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
 }

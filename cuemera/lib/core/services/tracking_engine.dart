@@ -1,11 +1,15 @@
-// features/scene_analysis/services/tracking_engine.dart
+// core/services/tracking_engine.dart
+import 'package:cuemera/features/reference_photo/domain/comparison_math.dart';
+import 'package:cuemera/features/reference_photo/domain/models/detection_thresholds.dart';
+import 'package:cuemera/features/reference_photo/domain/models/tolerance_settings.dart';
 import 'package:cuemera/features/scene_analysis/domain/models/scene_profile.dart';
 import 'package:cuemera/features/scene_analysis/domain/models/subject_profile.dart';
 
-const double _emaAlpha = 0.3;
-const int _debounceFrames = 2;
-
 class TrackingEngine {
+  TrackingEngine({this.thresholds = DetectionThresholds.defaultValues});
+
+  final DetectionThresholds thresholds;
+
   bool? _pendingEyesOpen;
   int _eyesOpenStreak = 0;
 
@@ -26,7 +30,7 @@ class TrackingEngine {
   double? _ema(double? raw, double? previous) {
     if (raw == null) return previous;
     if (previous == null) return raw;
-    return previous + _emaAlpha * (raw - previous);
+    return previous + thresholds.emaAlpha * (raw - previous);
   }
 
   int _bumpMissingStreak(int streak, bool rawIsNull) {
@@ -48,19 +52,20 @@ class TrackingEngine {
     );
 
     var bodyRatio = _ema(raw.bodyRatio, previous.bodyRatio);
-    if (_bodyRatioMissingStreak >= _debounceFrames) bodyRatio = null;
+    if (_bodyRatioMissingStreak >= thresholds.debounceFrames) bodyRatio = null;
 
     var faceAngleDegrees = _ema(
       raw.faceAngleDegrees,
       previous.faceAngleDegrees,
     );
-    if (_faceAngleMissingStreak >= _debounceFrames) faceAngleDegrees = null;
+    if (_faceAngleMissingStreak >= thresholds.debounceFrames)
+      faceAngleDegrees = null;
 
     var shoulderAngleDegrees = _ema(
       raw.shoulderAngleDegrees,
       previous.shoulderAngleDegrees,
     );
-    if (_shoulderAngleMissingStreak >= _debounceFrames) {
+    if (_shoulderAngleMissingStreak >= thresholds.debounceFrames) {
       shoulderAngleDegrees = null;
     }
 
@@ -72,7 +77,7 @@ class TrackingEngine {
         _pendingEyesOpen = raw.eyesOpen;
         _eyesOpenStreak = 1;
       }
-      if (_eyesOpenStreak >= _debounceFrames) {
+      if (_eyesOpenStreak >= thresholds.debounceFrames) {
         eyesOpen = _pendingEyesOpen;
       }
     }
@@ -80,7 +85,7 @@ class TrackingEngine {
       _eyesOpenMissingStreak,
       raw.eyesOpen == null,
     );
-    if (_eyesOpenMissingStreak >= _debounceFrames) eyesOpen = null;
+    if (_eyesOpenMissingStreak >= thresholds.debounceFrames) eyesOpen = null;
 
     String? expression = previous.expression;
     if (raw.expression != null) {
@@ -90,7 +95,7 @@ class TrackingEngine {
         _pendingExpression = raw.expression;
         _expressionStreak = 1;
       }
-      if (_expressionStreak >= _debounceFrames) {
+      if (_expressionStreak >= thresholds.debounceFrames) {
         expression = _pendingExpression;
       }
     }
@@ -98,7 +103,8 @@ class TrackingEngine {
       _expressionMissingStreak,
       raw.expression == null,
     );
-    if (_expressionMissingStreak >= _debounceFrames) expression = null;
+    if (_expressionMissingStreak >= thresholds.debounceFrames)
+      expression = null;
 
     return SubjectProfile(
       bodyRatio: bodyRatio,
@@ -122,7 +128,7 @@ class TrackingEngine {
       raw.lightDirectionDegrees,
       previous.lightDirectionDegrees,
     );
-    if (_lightDirectionMissingStreak >= _debounceFrames) {
+    if (_lightDirectionMissingStreak >= thresholds.debounceFrames) {
       lightDirectionDegrees = null;
     }
 
@@ -138,7 +144,7 @@ class TrackingEngine {
       raw.depthEstimate == null,
     );
     var depthEstimate = _ema(raw.depthEstimate, previous.depthEstimate);
-    if (_depthMissingStreak >= _debounceFrames) depthEstimate = null;
+    if (_depthMissingStreak >= thresholds.debounceFrames) depthEstimate = null;
 
     int backgroundClutterCount = previous.backgroundClutterCount;
     if (raw.backgroundClutterCount == _pendingClutterCount) {
@@ -147,7 +153,7 @@ class TrackingEngine {
       _pendingClutterCount = raw.backgroundClutterCount;
       _clutterStreak = 1;
     }
-    if (_clutterStreak >= _debounceFrames) {
+    if (_clutterStreak >= thresholds.debounceFrames) {
       backgroundClutterCount = _pendingClutterCount!;
     }
 
@@ -161,37 +167,120 @@ class TrackingEngine {
     );
   }
 
-  double trackingProgress(SubjectProfile current, SubjectProfile target) {
-    final diffs = <double>[];
+  double trackingProgress(
+    SubjectProfile current,
+    SubjectProfile target,
+    SceneProfile scene,
+    SceneProfile targetScene,
+    ToleranceSettings tolerance,
+  ) {
+    final scores = <double>[];
 
     if (current.shoulderAngleDegrees != null &&
         target.shoulderAngleDegrees != null) {
-      final diff =
-          (current.shoulderAngleDegrees! - target.shoulderAngleDegrees!).abs();
-      diffs.add(1.0 - (diff / 45.0).clamp(0.0, 1.0));
+      final deviation = ComparisonMath.deviation(
+        current.shoulderAngleDegrees!,
+        target.shoulderAngleDegrees!,
+      );
+      final threshold = ComparisonMath.thresholdForPose(
+        tolerance.poseTolerance,
+      );
+      scores.add(
+        ComparisonMath.similarity(
+          deviation,
+          threshold,
+          ComparisonMath.maxDeviationForPose,
+        ),
+      );
     }
 
     if (current.faceAngleDegrees != null && target.faceAngleDegrees != null) {
-      final diff = (current.faceAngleDegrees! - target.faceAngleDegrees!).abs();
-      diffs.add(1.0 - (diff / 45.0).clamp(0.0, 1.0));
+      final deviation = ComparisonMath.deviation(
+        current.faceAngleDegrees!,
+        target.faceAngleDegrees!,
+      );
+      final threshold = ComparisonMath.thresholdForPose(
+        tolerance.poseTolerance,
+      );
+      scores.add(
+        ComparisonMath.similarity(
+          deviation,
+          threshold,
+          ComparisonMath.maxDeviationForPose,
+        ),
+      );
     }
 
     if (current.bodyRatio != null && target.bodyRatio != null) {
-      final diff = (current.bodyRatio! - target.bodyRatio!).abs();
-      diffs.add(1.0 - (diff / 1.0).clamp(0.0, 1.0));
+      final deviation = ComparisonMath.relativeDeviation(
+        current.bodyRatio!,
+        target.bodyRatio!,
+      );
+      if (deviation != null) {
+        final threshold = ComparisonMath.thresholdForPoseRatio(
+          tolerance.poseTolerance,
+        );
+        scores.add(
+          ComparisonMath.similarity(
+            deviation,
+            threshold,
+            ComparisonMath.maxDeviationForPoseRatio,
+          ),
+        );
+      }
     }
 
     if (current.eyesOpen != null && target.eyesOpen != null) {
-      diffs.add(current.eyesOpen == target.eyesOpen ? 1.0 : 0.0);
+      scores.add(current.eyesOpen == target.eyesOpen ? 1.0 : 0.0);
     }
 
     if (current.expression != null && target.expression != null) {
-      diffs.add(current.expression == target.expression ? 1.0 : 0.0);
+      final deviation = current.expression == target.expression ? 0.0 : 1.0;
+      final threshold = ComparisonMath.thresholdForExpression(
+        tolerance.expressionTolerance,
+      );
+      scores.add(ComparisonMath.similarity(deviation, threshold, 1.0));
     }
 
-    if (diffs.isEmpty) return 0.0;
+    final brightnessDeviation = ComparisonMath.deviation(
+      scene.brightness,
+      targetScene.brightness,
+    );
+    final brightnessThreshold = ComparisonMath.thresholdForColor(
+      tolerance.colorTolerance,
+    );
+    scores.add(
+      ComparisonMath.similarity(
+        brightnessDeviation,
+        brightnessThreshold,
+        ComparisonMath.maxDeviationForColor,
+      ),
+    );
 
-    final sum = diffs.reduce((a, b) => a + b);
-    return (sum / diffs.length).clamp(0.0, 1.0);
+    final sceneClutterNormalized = (scene.backgroundClutterCount / 10).clamp(
+      0.0,
+      1.0,
+    );
+    final targetClutterNormalized = (targetScene.backgroundClutterCount / 10)
+        .clamp(0.0, 1.0);
+    final clutterDeviation = ComparisonMath.deviation(
+      sceneClutterNormalized,
+      targetClutterNormalized,
+    );
+    final clutterThreshold = ComparisonMath.thresholdForComposition(
+      tolerance.compositionTolerance,
+    );
+    scores.add(
+      ComparisonMath.similarity(
+        clutterDeviation,
+        clutterThreshold,
+        ComparisonMath.maxDeviationForComposition,
+      ),
+    );
+
+    if (scores.isEmpty) return 0.0;
+
+    final sum = scores.reduce((a, b) => a + b);
+    return (sum / scores.length).clamp(0.0, 1.0);
   }
 }

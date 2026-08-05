@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../capture/providers/capture_providers.dart';
+import '../../../reference_photo/providers/detection_thresholds_provider.dart';
 import '../../../reference_photo/providers/reference_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
 
@@ -39,6 +40,7 @@ class _DebugPerfOverlayState extends ConsumerState<DebugPerfOverlay> {
     final autoCaptureService = ref.watch(autoCaptureServiceProvider);
     final referenceAsync = ref.watch(referenceProfileProvider);
     final tolerance = ref.watch(toleranceSettingsProvider);
+    final thresholds = ref.watch(detectionThresholdsProvider);
     final breakdown = referenceAsync.maybeWhen(
       data: (reference) => reference == null
           ? <String, bool>{}
@@ -48,6 +50,7 @@ class _DebugPerfOverlayState extends ConsumerState<DebugPerfOverlay> {
               reference,
               tolerance,
               trackingProgress,
+              thresholds,
             ),
       orElse: () => <String, bool>{},
     );

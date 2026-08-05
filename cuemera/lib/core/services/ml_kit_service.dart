@@ -25,6 +25,7 @@ class MlKitService {
     options: FaceDetectorOptions(
       performanceMode: FaceDetectorMode.fast,
       enableTracking: true,
+      enableClassification: true,
     ),
   );
   final SelfieSegmenter _segmenter = SelfieSegmenter(

@@ -1,6 +1,7 @@
-// features/goal_selection/presentation/screens/goal_selection_screen.dart
+// features/home/presentation/screens/home_screen.dart
 import 'dart:math' as math;
 
+import 'package:cuemera/features/home/presentation/widgets/home_menu_card.dart';
 import 'package:cuemera/features/settings/presentation/screens/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,10 +12,9 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../../album/presentation/screens/album_screen.dart';
 import '../../../camera_session/presentation/screens/camera_screen.dart';
-import '../widgets/goal_card.dart';
 
-class GoalSelectionScreen extends ConsumerWidget {
-  const GoalSelectionScreen({super.key});
+class HomeScreen extends ConsumerWidget {
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,7 +32,7 @@ class GoalSelectionScreen extends ConsumerWidget {
                 const SizedBox(height: 32),
                 _HomeHeader(colors: colors),
                 const SizedBox(height: 32),
-                EditorialMenuCard(
+                HomeMenuCard(
                   height: 140,
                   icon: Icons.camera_alt_outlined,
                   title: AppStrings.homeShootLabel,
@@ -46,7 +46,7 @@ class GoalSelectionScreen extends ConsumerWidget {
                   },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                EditorialMenuCard(
+                HomeMenuCard(
                   height: 140,
                   icon: Icons.photo_library_outlined,
                   title: AppStrings.homeAlbumLabel,
@@ -60,7 +60,7 @@ class GoalSelectionScreen extends ConsumerWidget {
                   },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                EditorialMenuCard(
+                HomeMenuCard(
                   height: 140,
                   icon: Icons.settings_outlined,
                   title: AppStrings.homeSettingsLabel,

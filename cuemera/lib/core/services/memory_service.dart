@@ -60,6 +60,8 @@ class MemoryService {
   }
 }
 
-final memoryServiceProvider = Provider<MemoryService>((ref) {
-  return MemoryService();
+final memoryServiceProvider = FutureProvider<MemoryService>((ref) async {
+  final service = MemoryService();
+  await service.init();
+  return service;
 });

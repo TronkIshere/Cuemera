@@ -6,7 +6,7 @@ class AlbumState {
 
   final List<Shot> shots;
 
-  static const _shotTypes = [
+  static const List<String> shotTypes = [
     'hero',
     'half_body',
     'walking',
@@ -25,18 +25,18 @@ class AlbumState {
   double diversityScore() {
     if (shots.isEmpty) return 0.0;
     final distinctTypes = shots.map((s) => s.shotType).toSet().length;
-    return distinctTypes / _shotTypes.length;
+    return distinctTypes / shotTypes.length;
   }
 
   String suggestNextShotType() {
-    final counts = <String, int>{for (final t in _shotTypes) t: 0};
+    final counts = <String, int>{for (final t in shotTypes) t: 0};
     for (final shot in shots) {
       counts[shot.shotType] = (counts[shot.shotType] ?? 0) + 1;
     }
 
-    var leastType = _shotTypes.first;
+    var leastType = shotTypes.first;
     var leastCount = counts[leastType] ?? 0;
-    for (final type in _shotTypes) {
+    for (final type in shotTypes) {
       final count = counts[type] ?? 0;
       if (count < leastCount) {
         leastType = type;

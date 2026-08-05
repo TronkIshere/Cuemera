@@ -7,25 +7,24 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_typography.dart';
-import '../../../../core/di/service_locator.dart';
+import '../../../../core/services/memory_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
 import '../../../../core/services/theme_preference_service.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../../../shared/widgets/primary_button.dart';
-import '../../../goal_selection/presentation/screens/goal_selection_screen.dart';
+import '../../../home/presentation/screens/home_screen.dart';
 
 final splashInitProvider = FutureProvider.autoDispose<void>((ref) async {
-  await setupLocator();
   await ref.read(themeModeProvider.notifier).load();
 
   final cameraStatus = await Permission.camera.request();
-  final micStatus = await Permission.microphone.request();
 
-  if (!cameraStatus.isGranted || !micStatus.isGranted) {
-    throw Exception('Camera and microphone permissions are required');
+  if (!cameraStatus.isGranted) {
+    throw Exception('Camera permission is required');
   }
 
   ref.read(mlKitServiceProvider);
+  await ref.read(memoryServiceProvider.future);
 });
 
 class SplashScreen extends ConsumerWidget {
@@ -39,7 +38,7 @@ class SplashScreen extends ConsumerWidget {
     ref.listen<AsyncValue<void>>(splashInitProvider, (previous, next) {
       next.whenData((_) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const GoalSelectionScreen()),
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
         );
       });
     });

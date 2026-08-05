@@ -146,7 +146,7 @@ class ReferencePickerSheet extends ConsumerWidget {
                   profileAsync.when(
                     data: (profile) => profile == null
                         ? const SizedBox.shrink()
-                        : _ToleranceSliders(
+                        : ToleranceSliders(
                             colors: colors,
                             tolerance: tolerance,
                             ref: ref,
@@ -288,8 +288,8 @@ class ReferenceAnalysisPainter extends CustomPainter {
   }
 }
 
-class _ToleranceSliders extends StatelessWidget {
-  const _ToleranceSliders({
+class ToleranceSliders extends StatelessWidget {
+  const ToleranceSliders({
     required this.colors,
     required this.tolerance,
     required this.ref,

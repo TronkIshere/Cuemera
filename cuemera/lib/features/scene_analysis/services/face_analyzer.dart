@@ -3,6 +3,7 @@ import 'dart:ui' show Offset;
 
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
+import '../../../core/services/expression_classifier.dart';
 import '../../reference_photo/domain/comparison_math.dart';
 import '../domain/models/subject_profile.dart';
 
@@ -34,31 +35,12 @@ class FaceAnalyzer {
       eyesOpen = leftOpen > 0.5 && rightOpen > 0.5;
     }
 
-    String? expression;
     final smileProb = face.smilingProbability;
-    if (leftOpen != null &&
-        rightOpen != null &&
-        ((leftOpen > 0.5 && rightOpen <= 0.5) ||
-            (leftOpen <= 0.5 && rightOpen > 0.5))) {
-      expression = 'wink';
-    } else if (leftOpen != null &&
-        rightOpen != null &&
-        leftOpen <= 0.5 &&
-        rightOpen <= 0.5 &&
-        smileProb != null &&
-        smileProb > 0.3) {
-      expression = 'eyes_closed';
-    } else if (smileProb != null) {
-      if (smileProb > 0.85) {
-        expression = 'laughing';
-      } else if (smileProb > 0.7) {
-        expression = 'smiling';
-      } else if (smileProb > 0.3) {
-        expression = 'neutral';
-      } else {
-        expression = 'serious';
-      }
-    }
+    final expression = classifyExpression(
+      smilingProbability: smileProb,
+      leftEyeOpenProbability: leftOpen,
+      rightEyeOpenProbability: rightOpen,
+    );
 
     List<Offset>? contourPoints(FaceContourType type) {
       final contour = face.contours[type];

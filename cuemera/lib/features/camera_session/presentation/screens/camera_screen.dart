@@ -14,18 +14,19 @@ import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
 import '../../../../shared/widgets/score_badge.dart';
+import '../../../../shared/widgets/target_zone_overlay.dart';
 import '../../../album/domain/models/shot.dart';
 import '../../../album/presentation/screens/album_screen.dart';
 import '../../../album/providers/album_providers.dart';
 import '../../../capture/domain/shot_builder.dart';
+import '../../../capture/presentation/widgets/shot_type_picker_sheet.dart';
 import '../../../capture/providers/capture_providers.dart';
 import '../../../editorial_score/providers/score_providers.dart';
+import '../../../reference_photo/presentation/widgets/adjustments_sheet.dart';
 import '../../../reference_photo/presentation/widgets/reference_picker_sheet.dart';
 import '../../../reference_photo/providers/reference_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
-import '../../../scene_analysis/services/face_analyzer.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
-import '../../../scene_analysis/services/pose_analyzer.dart';
 import '../../../voice_director/providers/voice_providers.dart';
 import '../widgets/camera_preview_layer.dart';
 import '../widgets/camera_top_nav_bar.dart';
@@ -50,8 +51,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   DateTime _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _throttleInterval = Duration(milliseconds: 80);
 
-  final PoseAnalyzer _poseAnalyzer = PoseAnalyzer();
-  final FaceAnalyzer _faceAnalyzer = FaceAnalyzer();
   final LightAnalyzer _lightAnalyzer = LightAnalyzer();
 
   SegmentationMask? _latestMask;
@@ -86,6 +85,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       final cameraService = ref.read(cameraServiceProvider);
       await cameraService.init();
       await cameraService.initPreviewController();
+      ref.read(onFrameCallbackProvider.notifier).state = _onFrame;
       await cameraService.startImageStream(_onFrame);
 
       _mlKitSubscription = ref.read(mlKitServiceProvider).analysisStream.listen(
@@ -161,7 +161,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       scene: scene,
       reference: reference,
       tolerance: tolerance,
-      shotType: 'hero',
+      shotType: ref.read(selectedShotTypeProvider),
     );
 
     ref.read(albumStateProvider.notifier).addShot(shot);
@@ -180,9 +180,35 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     await cameraService.startImageStream(_onFrame);
   }
 
-  void _onAdjustmentsTap() {}
+  void _onAdjustmentsTap() {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return const AdjustmentsSheet();
+      },
+    );
+  }
 
-  void _onModeSelectorTap() {}
+  void _onModeSelectorTap() {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return const ShotTypePickerSheet();
+      },
+    );
+  }
 
   void _onReferencePhotoTap() {
     final colors = Theme.of(context).extension<AppColors>()!;
@@ -415,6 +441,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           onTapUp: _onTapUp,
           hasCaptured: _hasCaptured,
         ),
+        if (!_hasCaptured)
+          IgnorePointer(
+            child: TargetZoneOverlay(
+              aligned: trackingProgress >= 0.95,
+              trackingProgress: trackingProgress,
+            ),
+          ),
         if (kDebugMode) DebugPerfOverlay(key: _debugPerfOverlayKey),
         Positioned(
           top: clusterTop,

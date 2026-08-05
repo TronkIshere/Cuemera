@@ -2,11 +2,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/camera_service.dart';
+import '../../album/domain/models/album_state.dart';
 import '../../album/domain/models/shot.dart';
+import '../../reference_photo/providers/detection_thresholds_provider.dart';
 import '../../reference_photo/providers/reference_providers.dart';
 import '../../scene_analysis/providers/scene_providers.dart';
 import '../domain/shot_builder.dart';
 import '../services/auto_capture_service.dart';
+
+final selectedShotTypeProvider = StateProvider<String>(
+  (ref) => AlbumState.shotTypes.first,
+);
 
 final autoCaptureServiceProvider = Provider<AutoCaptureService>((ref) {
   return AutoCaptureService();
@@ -19,6 +25,7 @@ final shouldCaptureProvider = Provider<bool>((ref) {
   final autoCaptureService = ref.watch(autoCaptureServiceProvider);
   final referenceAsync = ref.watch(referenceProfileProvider);
   final tolerance = ref.watch(toleranceSettingsProvider);
+  final thresholds = ref.watch(detectionThresholdsProvider);
 
   final reference = referenceAsync.valueOrNull;
   if (reference == null) return false;
@@ -29,6 +36,7 @@ final shouldCaptureProvider = Provider<bool>((ref) {
     reference,
     tolerance,
     trackingProgress,
+    thresholds,
   );
 });
 
@@ -57,10 +65,15 @@ final autoCaptureProvider = Provider<void>((ref) {
       scene: scene,
       reference: reference,
       tolerance: tolerance,
-      shotType: 'hero',
+      shotType: ref.read(selectedShotTypeProvider),
     );
 
     ref.read(capturedShotProvider.notifier).state = shot;
+
+    final onFrame = ref.read(onFrameCallbackProvider);
+    if (onFrame != null) {
+      await cameraService.startImageStream(onFrame);
+    }
   });
 });
 

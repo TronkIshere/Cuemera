@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:cuemera/features/reference_photo/domain/models/reference_profile.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart' show HSLColor, Offset;
 import 'package:flutter/painting.dart' show FileImage;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -11,6 +12,7 @@ import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentatio
 import 'package:image/image.dart' as img;
 import 'package:palette_generator/palette_generator.dart';
 
+import '../../../core/services/expression_classifier.dart';
 import '../domain/comparison_math.dart';
 
 class ReferenceImageAnalyzer {
@@ -71,7 +73,8 @@ class ReferenceImageAnalyzer {
         }
         if (points.any((p) => p != null)) poseLandmarkPoints = points;
       }
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('ReferenceImageAnalyzer: pose detection failed: $e\n$st');
     } finally {
       await poseDetector.close();
     }
@@ -119,7 +122,7 @@ class ReferenceImageAnalyzer {
         leftEyeOpenProbability = face.leftEyeOpenProbability;
         rightEyeOpenProbability = face.rightEyeOpenProbability;
 
-        expression = _classifyExpression(
+        expression = classifyExpression(
           smilingProbability: smilingProbability,
           leftEyeOpenProbability: leftEyeOpenProbability,
           rightEyeOpenProbability: rightEyeOpenProbability,
@@ -171,7 +174,8 @@ class ReferenceImageAnalyzer {
             ? (leftEyeRatio + rightEyeRatio) / 2
             : (leftEyeRatio ?? rightEyeRatio);
       }
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('ReferenceImageAnalyzer: face detection failed: $e\n$st');
     } finally {
       await faceDetector.close();
     }
@@ -186,7 +190,8 @@ class ReferenceImageAnalyzer {
     );
     try {
       mask = await segmenter.processImage(inputImage);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('ReferenceImageAnalyzer: segmentation failed: $e\n$st');
     } finally {
       await segmenter.close();
     }
@@ -201,7 +206,9 @@ class ReferenceImageAnalyzer {
         imageWidth = decoded.width.toDouble();
         imageHeight = decoded.height.toDouble();
       }
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('ReferenceImageAnalyzer: image decode failed: $e\n$st');
+    }
 
     if (mask != null) {
       negativeSpaceScore = _estimateNegativeSpace(mask);
@@ -231,7 +238,9 @@ class ReferenceImageAnalyzer {
           1.0,
         );
       }
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('ReferenceImageAnalyzer: palette generation failed: $e\n$st');
+    }
 
     return ReferenceProfile(
       imagePath: imagePath,
@@ -270,34 +279,6 @@ class ReferenceImageAnalyzer {
     );
   }
 
-  /// Combines smile probability with eye-openness to produce a more
-  /// granular label than a single smiling/not-smiling split.
-  String? _classifyExpression({
-    double? smilingProbability,
-    double? leftEyeOpenProbability,
-    double? rightEyeOpenProbability,
-  }) {
-    if (smilingProbability == null) return null;
-
-    final eyeOpenValues = [
-      leftEyeOpenProbability,
-      rightEyeOpenProbability,
-    ].whereType<double>().toList();
-    final avgEyeOpen = eyeOpenValues.isEmpty
-        ? null
-        : eyeOpenValues.reduce((a, b) => a + b) / eyeOpenValues.length;
-
-    if (avgEyeOpen != null && avgEyeOpen < 0.25) {
-      return smilingProbability > 0.5 ? 'laughing_eyes_closed' : 'eyes_closed';
-    }
-
-    if (smilingProbability > 0.85) return 'big_smile';
-    if (smilingProbability > 0.6) return 'smiling';
-    if (smilingProbability > 0.35) return 'slight_smile';
-    if (smilingProbability > 0.15) return 'neutral';
-    return 'serious';
-  }
-
   double? _estimateNegativeSpace(SegmentationMask mask) {
     final confidences = mask.confidences;
     if (confidences.isEmpty) return null;
@@ -315,9 +296,9 @@ class ReferenceImageAnalyzer {
   }
 
   double? _estimateSymmetry(
-    SegmentationMask mask,
-    double? shoulderAngleDegrees,
-  ) {
+      SegmentationMask mask,
+      double? shoulderAngleDegrees,
+      ) {
     if (shoulderAngleDegrees != null) {
       final angle = shoulderAngleDegrees.abs();
       return (1.0 - (angle / 45.0)).clamp(0.0, 1.0);

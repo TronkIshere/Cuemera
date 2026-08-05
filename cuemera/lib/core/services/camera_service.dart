@@ -8,7 +8,6 @@ class CameraService {
   CameraController? _previewController;
   List<CameraDescription> _cameras = [];
   int _lensIndex = 0;
-  Object? lastGallerySaveError;
 
   CameraController? get controller => _controller;
   CameraController? get previewController => _previewController;
@@ -81,17 +80,12 @@ class CameraService {
     }
 
     if (path != null) {
-      lastGallerySaveError = null;
       try {
         final hasAccess = await Gal.requestAccess();
         if (hasAccess) {
           await Gal.putImage(path);
-        } else {
-          lastGallerySaveError = 'Gallery permission denied';
         }
-      } catch (e) {
-        lastGallerySaveError = 'Gallery save failed: $e';
-      }
+      } catch (_) {}
     }
 
     return path;

@@ -29,47 +29,47 @@ class AlbumScreen extends ConsumerWidget {
       body: album.shots.isEmpty
           ? _EmptyState(colors: colors)
           : SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Diversity: ${(notifier.diversityScore() * 100).round()}%',
-                          style: AppTypography.body(
-                            colors,
-                          ).copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          'Try next: ${notifier.suggestNextShotType()}',
-                          style: AppTypography.caption(colors),
-                        ),
-                      ],
-                    ),
+                  Text(
+                    'Diversity: ${(notifier.diversityScore() * 100).round()}%',
+                    style: AppTypography.body(
+                      colors,
+                    ).copyWith(fontWeight: FontWeight.w600),
                   ),
-                  Expanded(
-                    child: GridView.builder(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      itemCount: album.shots.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: AppSpacing.md,
-                            mainAxisSpacing: AppSpacing.md,
-                            childAspectRatio: 0.8,
-                          ),
-                      itemBuilder: (context, index) {
-                        final shot = album.shots[index];
-                        return _ShotTile(shot: shot, colors: colors);
-                      },
-                    ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Try next: ${notifier.suggestNextShotType()}',
+                    style: AppTypography.caption(colors),
                   ),
                 ],
               ),
             ),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                itemCount: album.shots.length,
+                gridDelegate:
+                const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: AppSpacing.md,
+                  mainAxisSpacing: AppSpacing.md,
+                  childAspectRatio: 0.8,
+                ),
+                itemBuilder: (context, index) {
+                  final shot = album.shots[index];
+                  return _ShotTile(shot: shot, colors: colors);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -101,7 +101,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.lg),
             PrimaryButton(
-              label: 'Quay lại chụp',
+              label: 'Back to camera',
               onPressed: () => Navigator.of(context).pop(),
             ),
           ],
@@ -112,9 +112,9 @@ class _EmptyState extends StatelessWidget {
 }
 
 Future<bool> _confirmDeleteDialog(
-  BuildContext context,
-  AppColors colors,
-) async {
+    BuildContext context,
+    AppColors colors,
+    ) async {
   final result = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -236,10 +236,10 @@ class ShotDetailScreen extends ConsumerWidget {
               flex: 3,
               child: shot.imagePath != null
                   ? Image.file(
-                      File(shot.imagePath!),
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                    )
+                File(shot.imagePath!),
+                fit: BoxFit.cover,
+                width: double.infinity,
+              )
                   : Container(color: colors.surface),
             ),
             Expanded(
@@ -260,12 +260,12 @@ class ShotDetailScreen extends ConsumerWidget {
                     Expanded(
                       child: GridView.builder(
                         gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              crossAxisSpacing: AppSpacing.sm,
-                              mainAxisSpacing: AppSpacing.sm,
-                              childAspectRatio: 1.0,
-                            ),
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: AppSpacing.sm,
+                          mainAxisSpacing: AppSpacing.sm,
+                          childAspectRatio: 1.0,
+                        ),
                         itemCount: shot.score.breakdown.length,
                         itemBuilder: (context, index) {
                           final entry = shot.score.breakdown.entries.elementAt(

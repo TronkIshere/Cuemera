@@ -15,6 +15,22 @@ class EditorialScore {
   final int overall;
   final Map<String, int> breakdown;
   final String? nextSuggestion;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'overall': overall,
+      'breakdown': breakdown,
+      'nextSuggestion': nextSuggestion,
+    };
+  }
+
+  factory EditorialScore.fromMap(Map<String, dynamic> map) {
+    return EditorialScore(
+      overall: map['overall'] as int,
+      breakdown: Map<String, int>.from(map['breakdown'] as Map),
+      nextSuggestion: map['nextSuggestion'] as String?,
+    );
+  }
 }
 
 EditorialScore calculateReferenceScore(
