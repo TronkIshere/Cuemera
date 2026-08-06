@@ -24,27 +24,45 @@ class SubjectProfile {
   final String? expression;
   final DateTime timestamp;
 
+  static const Object _unset = Object();
+
   SubjectProfile copyWith({
-    double? bodyRatio,
-    double? faceAngleDegrees,
-    double? faceAngleXDegrees,
-    double? faceAngleZDegrees,
-    double? mouthOpenRatio,
-    double? eyeOpenRatio,
-    double? shoulderAngleDegrees,
-    bool? eyesOpen,
-    String? expression,
+    Object? bodyRatio = _unset,
+    Object? faceAngleDegrees = _unset,
+    Object? faceAngleXDegrees = _unset,
+    Object? faceAngleZDegrees = _unset,
+    Object? mouthOpenRatio = _unset,
+    Object? eyeOpenRatio = _unset,
+    Object? shoulderAngleDegrees = _unset,
+    Object? eyesOpen = _unset,
+    Object? expression = _unset,
   }) {
     return SubjectProfile(
-      bodyRatio: bodyRatio ?? this.bodyRatio,
-      faceAngleDegrees: faceAngleDegrees ?? this.faceAngleDegrees,
-      faceAngleXDegrees: faceAngleXDegrees ?? this.faceAngleXDegrees,
-      faceAngleZDegrees: faceAngleZDegrees ?? this.faceAngleZDegrees,
-      mouthOpenRatio: mouthOpenRatio ?? this.mouthOpenRatio,
-      eyeOpenRatio: eyeOpenRatio ?? this.eyeOpenRatio,
-      shoulderAngleDegrees: shoulderAngleDegrees ?? this.shoulderAngleDegrees,
-      eyesOpen: eyesOpen ?? this.eyesOpen,
-      expression: expression ?? this.expression,
+      bodyRatio: identical(bodyRatio, _unset)
+          ? this.bodyRatio
+          : bodyRatio as double?,
+      faceAngleDegrees: identical(faceAngleDegrees, _unset)
+          ? this.faceAngleDegrees
+          : faceAngleDegrees as double?,
+      faceAngleXDegrees: identical(faceAngleXDegrees, _unset)
+          ? this.faceAngleXDegrees
+          : faceAngleXDegrees as double?,
+      faceAngleZDegrees: identical(faceAngleZDegrees, _unset)
+          ? this.faceAngleZDegrees
+          : faceAngleZDegrees as double?,
+      mouthOpenRatio: identical(mouthOpenRatio, _unset)
+          ? this.mouthOpenRatio
+          : mouthOpenRatio as double?,
+      eyeOpenRatio: identical(eyeOpenRatio, _unset)
+          ? this.eyeOpenRatio
+          : eyeOpenRatio as double?,
+      shoulderAngleDegrees: identical(shoulderAngleDegrees, _unset)
+          ? this.shoulderAngleDegrees
+          : shoulderAngleDegrees as double?,
+      eyesOpen: identical(eyesOpen, _unset) ? this.eyesOpen : eyesOpen as bool?,
+      expression: identical(expression, _unset)
+          ? this.expression
+          : expression as String?,
       timestamp: DateTime.now(),
     );
   }

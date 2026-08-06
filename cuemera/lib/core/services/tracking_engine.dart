@@ -21,6 +21,10 @@ class TrackingEngine {
 
   int _bodyRatioMissingStreak = 0;
   int _faceAngleMissingStreak = 0;
+  int _faceAngleXMissingStreak = 0;
+  int _faceAngleZMissingStreak = 0;
+  int _mouthOpenMissingStreak = 0;
+  int _eyeOpenRatioMissingStreak = 0;
   int _shoulderAngleMissingStreak = 0;
   int _eyesOpenMissingStreak = 0;
   int _expressionMissingStreak = 0;
@@ -46,6 +50,22 @@ class TrackingEngine {
       _faceAngleMissingStreak,
       raw.faceAngleDegrees == null,
     );
+    _faceAngleXMissingStreak = _bumpMissingStreak(
+      _faceAngleXMissingStreak,
+      raw.faceAngleXDegrees == null,
+    );
+    _faceAngleZMissingStreak = _bumpMissingStreak(
+      _faceAngleZMissingStreak,
+      raw.faceAngleZDegrees == null,
+    );
+    _mouthOpenMissingStreak = _bumpMissingStreak(
+      _mouthOpenMissingStreak,
+      raw.mouthOpenRatio == null,
+    );
+    _eyeOpenRatioMissingStreak = _bumpMissingStreak(
+      _eyeOpenRatioMissingStreak,
+      raw.eyeOpenRatio == null,
+    );
     _shoulderAngleMissingStreak = _bumpMissingStreak(
       _shoulderAngleMissingStreak,
       raw.shoulderAngleDegrees == null,
@@ -60,6 +80,32 @@ class TrackingEngine {
     );
     if (_faceAngleMissingStreak >= thresholds.debounceFrames)
       faceAngleDegrees = null;
+
+    var faceAngleXDegrees = _ema(
+      raw.faceAngleXDegrees,
+      previous.faceAngleXDegrees,
+    );
+    if (_faceAngleXMissingStreak >= thresholds.debounceFrames) {
+      faceAngleXDegrees = null;
+    }
+
+    var faceAngleZDegrees = _ema(
+      raw.faceAngleZDegrees,
+      previous.faceAngleZDegrees,
+    );
+    if (_faceAngleZMissingStreak >= thresholds.debounceFrames) {
+      faceAngleZDegrees = null;
+    }
+
+    var mouthOpenRatio = _ema(raw.mouthOpenRatio, previous.mouthOpenRatio);
+    if (_mouthOpenMissingStreak >= thresholds.debounceFrames) {
+      mouthOpenRatio = null;
+    }
+
+    var eyeOpenRatio = _ema(raw.eyeOpenRatio, previous.eyeOpenRatio);
+    if (_eyeOpenRatioMissingStreak >= thresholds.debounceFrames) {
+      eyeOpenRatio = null;
+    }
 
     var shoulderAngleDegrees = _ema(
       raw.shoulderAngleDegrees,
@@ -109,6 +155,10 @@ class TrackingEngine {
     return SubjectProfile(
       bodyRatio: bodyRatio,
       faceAngleDegrees: faceAngleDegrees,
+      faceAngleXDegrees: faceAngleXDegrees,
+      faceAngleZDegrees: faceAngleZDegrees,
+      mouthOpenRatio: mouthOpenRatio,
+      eyeOpenRatio: eyeOpenRatio,
       shoulderAngleDegrees: shoulderAngleDegrees,
       eyesOpen: eyesOpen,
       expression: expression,

@@ -15,12 +15,161 @@ import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/expression_classifier.dart';
 import '../domain/comparison_math.dart';
 
+class _PoseAnalysisResult {
+  final double? bodyRatio;
+  final double? shoulderAngleDegrees;
+  final List<Offset?>? poseLandmarkPoints;
+
+  const _PoseAnalysisResult({
+    this.bodyRatio,
+    this.shoulderAngleDegrees,
+    this.poseLandmarkPoints,
+  });
+}
+
+class _FaceAnalysisResult {
+  final double? faceAngleDegrees;
+  final double? faceAngleXDegrees;
+  final double? faceAngleZDegrees;
+  final String? expression;
+  final double? smilingProbability;
+  final double? leftEyeOpenProbability;
+  final double? rightEyeOpenProbability;
+  final List<Offset>? faceContourPoints;
+  final List<Offset>? faceOvalPoints;
+  final List<Offset>? leftEyeContour;
+  final List<Offset>? rightEyeContour;
+  final List<Offset>? leftEyebrowTopContour;
+  final List<Offset>? rightEyebrowTopContour;
+  final List<Offset>? upperLipTopContour;
+  final List<Offset>? upperLipBottomContour;
+  final List<Offset>? lowerLipTopContour;
+  final List<Offset>? lowerLipBottomContour;
+  final List<Offset>? noseBridgeContour;
+  final List<Offset>? noseBottomContour;
+  final double? mouthOpenRatio;
+  final double? eyeOpenRatio;
+
+  const _FaceAnalysisResult({
+    this.faceAngleDegrees,
+    this.faceAngleXDegrees,
+    this.faceAngleZDegrees,
+    this.expression,
+    this.smilingProbability,
+    this.leftEyeOpenProbability,
+    this.rightEyeOpenProbability,
+    this.faceContourPoints,
+    this.faceOvalPoints,
+    this.leftEyeContour,
+    this.rightEyeContour,
+    this.leftEyebrowTopContour,
+    this.rightEyebrowTopContour,
+    this.upperLipTopContour,
+    this.upperLipBottomContour,
+    this.lowerLipTopContour,
+    this.lowerLipBottomContour,
+    this.noseBridgeContour,
+    this.noseBottomContour,
+    this.mouthOpenRatio,
+    this.eyeOpenRatio,
+  });
+}
+
+class _DecodedImageResult {
+  final img.Image? decoded;
+  final double? imageWidth;
+  final double? imageHeight;
+
+  const _DecodedImageResult({this.decoded, this.imageWidth, this.imageHeight});
+}
+
+class _PaletteAnalysisResult {
+  final double? dominantHue;
+  final double? warmthScore;
+
+  const _PaletteAnalysisResult({this.dominantHue, this.warmthScore});
+}
+
 class ReferenceImageAnalyzer {
   static const double _minLandmarkLikelihood = 0.6;
 
   Future<ReferenceProfile> analyze(String imagePath) async {
     final inputImage = InputImage.fromFilePath(imagePath);
 
+    // None of these five steps depends on another's result, so they run
+    // concurrently instead of sequentially. Only the mask-dependent scores
+    // below (which need both `mask` and `decoded`) wait on more than one.
+    final results = await Future.wait<Object?>([
+      _analyzePose(inputImage),
+      _analyzeFace(inputImage),
+      _runSegmentation(inputImage),
+      _decodeImageFile(imagePath),
+      _analyzePalette(imagePath),
+    ]);
+
+    final poseResult = results[0] as _PoseAnalysisResult;
+    final faceResult = results[1] as _FaceAnalysisResult;
+    final mask = results[2] as SegmentationMask?;
+    final decodedResult = results[3] as _DecodedImageResult;
+    final paletteResult = results[4] as _PaletteAnalysisResult;
+
+    double? negativeSpaceScore;
+    double? symmetryScore;
+    int? backgroundClutterCount;
+    if (mask != null) {
+      negativeSpaceScore = _estimateNegativeSpace(mask);
+      symmetryScore = _estimateSymmetry(mask, poseResult.shoulderAngleDegrees);
+      if (decodedResult.decoded != null) {
+        backgroundClutterCount = _estimateBackgroundClutter(
+          decodedResult.decoded!,
+          mask,
+        );
+      }
+    }
+
+    double? overallBrightness;
+    if (decodedResult.decoded != null) {
+      overallBrightness = _estimateBrightness(decodedResult.decoded!);
+    }
+
+    return ReferenceProfile(
+      imagePath: imagePath,
+      bodyRatio: poseResult.bodyRatio,
+      faceAngleDegrees: faceResult.faceAngleDegrees,
+      faceAngleXDegrees: faceResult.faceAngleXDegrees,
+      faceAngleZDegrees: faceResult.faceAngleZDegrees,
+      shoulderAngleDegrees: poseResult.shoulderAngleDegrees,
+      expression: faceResult.expression,
+      smilingProbability: faceResult.smilingProbability,
+      leftEyeOpenProbability: faceResult.leftEyeOpenProbability,
+      rightEyeOpenProbability: faceResult.rightEyeOpenProbability,
+      negativeSpaceScore: negativeSpaceScore,
+      symmetryScore: symmetryScore,
+      backgroundClutterCount: backgroundClutterCount,
+      dominantHue: paletteResult.dominantHue,
+      warmthScore: paletteResult.warmthScore,
+      overallBrightness: overallBrightness,
+      poseLandmarkPoints: poseResult.poseLandmarkPoints,
+      faceContourPoints: faceResult.faceContourPoints,
+      faceOvalPoints: faceResult.faceOvalPoints,
+      leftEyeContour: faceResult.leftEyeContour,
+      rightEyeContour: faceResult.rightEyeContour,
+      leftEyebrowTopContour: faceResult.leftEyebrowTopContour,
+      rightEyebrowTopContour: faceResult.rightEyebrowTopContour,
+      upperLipTopContour: faceResult.upperLipTopContour,
+      upperLipBottomContour: faceResult.upperLipBottomContour,
+      lowerLipTopContour: faceResult.lowerLipTopContour,
+      lowerLipBottomContour: faceResult.lowerLipBottomContour,
+      noseBridgeContour: faceResult.noseBridgeContour,
+      noseBottomContour: faceResult.noseBottomContour,
+      mouthOpenRatio: faceResult.mouthOpenRatio,
+      eyeOpenRatio: faceResult.eyeOpenRatio,
+      imageWidth: decodedResult.imageWidth,
+      imageHeight: decodedResult.imageHeight,
+    );
+  }
+
+  Future<_PoseAnalysisResult> _analyzePose(InputImage inputImage) async {
     double? bodyRatio;
     double? shoulderAngleDegrees;
     List<Offset?>? poseLandmarkPoints;
@@ -41,7 +190,14 @@ class ReferenceImageAnalyzer {
           shoulderAngleDegrees = atan2(dy, dx) * 180 / pi;
         }
 
-        if (nose != null && leftHip != null && leftAnkle != null) {
+        final noseConfident =
+            nose != null && nose.likelihood >= _minLandmarkLikelihood;
+        final leftHipConfident =
+            leftHip != null && leftHip.likelihood >= _minLandmarkLikelihood;
+        final leftAnkleConfident =
+            leftAnkle != null && leftAnkle.likelihood >= _minLandmarkLikelihood;
+
+        if (noseConfident && leftHipConfident && leftAnkleConfident) {
           final upperLength = (leftHip.y - nose.y).abs();
           final lowerLength = (leftAnkle.y - leftHip.y).abs();
           if (lowerLength > 0) bodyRatio = upperLength / lowerLength;
@@ -83,6 +239,14 @@ class ReferenceImageAnalyzer {
       await poseDetector.close();
     }
 
+    return _PoseAnalysisResult(
+      bodyRatio: bodyRatio,
+      shoulderAngleDegrees: shoulderAngleDegrees,
+      poseLandmarkPoints: poseLandmarkPoints,
+    );
+  }
+
+  Future<_FaceAnalysisResult> _analyzeFace(InputImage inputImage) async {
     double? faceAngleDegrees;
     double? faceAngleXDegrees;
     double? faceAngleZDegrees;
@@ -188,9 +352,32 @@ class ReferenceImageAnalyzer {
       await faceDetector.close();
     }
 
-    double? negativeSpaceScore;
-    double? symmetryScore;
-    int? backgroundClutterCount;
+    return _FaceAnalysisResult(
+      faceAngleDegrees: faceAngleDegrees,
+      faceAngleXDegrees: faceAngleXDegrees,
+      faceAngleZDegrees: faceAngleZDegrees,
+      expression: expression,
+      smilingProbability: smilingProbability,
+      leftEyeOpenProbability: leftEyeOpenProbability,
+      rightEyeOpenProbability: rightEyeOpenProbability,
+      faceContourPoints: faceContourPoints,
+      faceOvalPoints: faceOvalPoints,
+      leftEyeContour: leftEyeContour,
+      rightEyeContour: rightEyeContour,
+      leftEyebrowTopContour: leftEyebrowTopContour,
+      rightEyebrowTopContour: rightEyebrowTopContour,
+      upperLipTopContour: upperLipTopContour,
+      upperLipBottomContour: upperLipBottomContour,
+      lowerLipTopContour: lowerLipTopContour,
+      lowerLipBottomContour: lowerLipBottomContour,
+      noseBridgeContour: noseBridgeContour,
+      noseBottomContour: noseBottomContour,
+      mouthOpenRatio: mouthOpenRatio,
+      eyeOpenRatio: eyeOpenRatio,
+    );
+  }
+
+  Future<SegmentationMask?> _runSegmentation(InputImage inputImage) async {
     SegmentationMask? mask;
     final segmenter = SelfieSegmenter(
       mode: SegmenterMode.single,
@@ -207,7 +394,10 @@ class ReferenceImageAnalyzer {
     } finally {
       await segmenter.close();
     }
+    return mask;
+  }
 
+  Future<_DecodedImageResult> _decodeImageFile(String imagePath) async {
     img.Image? decoded;
     double? imageWidth;
     double? imageHeight;
@@ -225,20 +415,14 @@ class ReferenceImageAnalyzer {
         context: 'ReferenceImageAnalyzer: image decode',
       );
     }
+    return _DecodedImageResult(
+      decoded: decoded,
+      imageWidth: imageWidth,
+      imageHeight: imageHeight,
+    );
+  }
 
-    if (mask != null) {
-      negativeSpaceScore = _estimateNegativeSpace(mask);
-      symmetryScore = _estimateSymmetry(mask, shoulderAngleDegrees);
-      if (decoded != null) {
-        backgroundClutterCount = _estimateBackgroundClutter(decoded, mask);
-      }
-    }
-
-    double? overallBrightness;
-    if (decoded != null) {
-      overallBrightness = _estimateBrightness(decoded);
-    }
-
+  Future<_PaletteAnalysisResult> _analyzePalette(String imagePath) async {
     double? dominantHue;
     double? warmthScore;
     try {
@@ -261,41 +445,9 @@ class ReferenceImageAnalyzer {
         context: 'ReferenceImageAnalyzer: palette generation',
       );
     }
-
-    return ReferenceProfile(
-      imagePath: imagePath,
-      bodyRatio: bodyRatio,
-      faceAngleDegrees: faceAngleDegrees,
-      faceAngleXDegrees: faceAngleXDegrees,
-      faceAngleZDegrees: faceAngleZDegrees,
-      shoulderAngleDegrees: shoulderAngleDegrees,
-      expression: expression,
-      smilingProbability: smilingProbability,
-      leftEyeOpenProbability: leftEyeOpenProbability,
-      rightEyeOpenProbability: rightEyeOpenProbability,
-      negativeSpaceScore: negativeSpaceScore,
-      symmetryScore: symmetryScore,
-      backgroundClutterCount: backgroundClutterCount,
+    return _PaletteAnalysisResult(
       dominantHue: dominantHue,
       warmthScore: warmthScore,
-      overallBrightness: overallBrightness,
-      poseLandmarkPoints: poseLandmarkPoints,
-      faceContourPoints: faceContourPoints,
-      faceOvalPoints: faceOvalPoints,
-      leftEyeContour: leftEyeContour,
-      rightEyeContour: rightEyeContour,
-      leftEyebrowTopContour: leftEyebrowTopContour,
-      rightEyebrowTopContour: rightEyebrowTopContour,
-      upperLipTopContour: upperLipTopContour,
-      upperLipBottomContour: upperLipBottomContour,
-      lowerLipTopContour: lowerLipTopContour,
-      lowerLipBottomContour: lowerLipBottomContour,
-      noseBridgeContour: noseBridgeContour,
-      noseBottomContour: noseBottomContour,
-      mouthOpenRatio: mouthOpenRatio,
-      eyeOpenRatio: eyeOpenRatio,
-      imageWidth: imageWidth,
-      imageHeight: imageHeight,
     );
   }
 

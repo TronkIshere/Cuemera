@@ -69,7 +69,7 @@ final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
   }
 
   return SubjectProfile(
-    bodyRatio: current.bodyRatio,
+    bodyRatio: null,
     faceAngleDegrees: 0.0,
     shoulderAngleDegrees: 0.0,
     eyesOpen: true,

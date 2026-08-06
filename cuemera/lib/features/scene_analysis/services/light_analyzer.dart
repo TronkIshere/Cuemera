@@ -2,12 +2,25 @@
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 
 import '../domain/models/scene_profile.dart';
 import '../domain/models/subject_profile.dart';
 
 class LightAnalyzer {
+  /// Set to `true` for a physical-device verification pass of the
+  /// `planes[1]=U, planes[2]=V` assumption in [_estimateColorTone]
+  /// (see LIMITATIONS_AND_ROADMAP.md). With this on, point the camera at
+  /// a known pure-red target, then a known pure-blue target, and compare
+  /// the logged `avgU`/`avgV` against the expected YUV values for each
+  /// (pure red: U low/~90, V high/~240; pure blue: U high/~240, V
+  /// low/~110, for standard BT.601 full-range). If the logged values are
+  /// swapped or don't move as expected, the plane-index assumption is
+  /// wrong for this device/format and `_estimateColorTone` needs fixing.
+  /// Leave `false` outside of that verification pass — this runs every
+  /// analyzed frame and would otherwise flood the log.
+  static const bool debugLogColorToneSamples = false;
   SceneProfile analyzeLight(
     dynamic cameraFrame,
     SceneProfile previous, {
@@ -340,6 +353,16 @@ class LightAnalyzer {
     final warmth = (((normalizedWarmth + 1.0) / 2.0)).clamp(0.0, 1.0);
 
     final hue = _atan2Degrees(centeredV, centeredU);
+
+    if (debugLogColorToneSamples) {
+      debugPrint(
+        '[LightAnalyzer] colorTone sample — '
+        'avgU: ${avgU.toStringAsFixed(1)}, '
+        'avgV: ${avgV.toStringAsFixed(1)}, '
+        'hue: ${hue.toStringAsFixed(1)}, '
+        'warmth: ${warmth.toStringAsFixed(2)}',
+      );
+    }
 
     return (hue, warmth);
   }
