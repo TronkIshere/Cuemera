@@ -22,5 +22,7 @@ Shot buildShotFromCapture({
     timestamp: DateTime.now(),
     shotType: shotType,
     imagePath: imagePath,
+    referenceImagePath: reference.imagePath,
+    toleranceSettings: tolerance,
   );
 }

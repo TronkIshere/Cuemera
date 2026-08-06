@@ -9,6 +9,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 
+import 'error_reporting_service.dart';
+
 class MlKitAnalysisResult {
   const MlKitAnalysisResult({this.poses, this.faces, this.segmentationMask});
 
@@ -34,9 +36,23 @@ class MlKitService {
   );
 
   final _resultController = StreamController<MlKitAnalysisResult>.broadcast();
+  final _availabilityController = StreamController<bool>.broadcast();
   bool _busy = false;
 
+  /// How many consecutive per-frame failures (e.g. the on-device model
+  /// failing to download/initialize) before we flag ML Kit as unavailable
+  /// to the UI, rather than reacting to one transient frame error.
+  static const int _maxConsecutiveFailuresBeforeFlagging = 5;
+  int _consecutiveFailures = 0;
+  bool _flaggedUnavailable = false;
+
   Stream<MlKitAnalysisResult> get analysisStream => _resultController.stream;
+
+  /// Emits `true` once ML Kit is confirmed unavailable (repeated
+  /// processImage failures — typically a failed on-device model
+  /// download/initialization) and `false` again if it starts succeeding
+  /// afterward. Does not emit on every single frame.
+  Stream<bool> get unavailableStream => _availabilityController.stream;
 
   Future<void> processImage(
     CameraImage image,
@@ -57,6 +73,27 @@ class MlKitService {
       _resultController.add(
         MlKitAnalysisResult(poses: poses, faces: faces, segmentationMask: mask),
       );
+
+      if (_consecutiveFailures > 0 || _flaggedUnavailable) {
+        _consecutiveFailures = 0;
+        if (_flaggedUnavailable) {
+          _flaggedUnavailable = false;
+          _availabilityController.add(false);
+        }
+      }
+    } catch (e, st) {
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'MlKitService: processImage',
+      );
+
+      _consecutiveFailures++;
+      if (!_flaggedUnavailable &&
+          _consecutiveFailures >= _maxConsecutiveFailuresBeforeFlagging) {
+        _flaggedUnavailable = true;
+        _availabilityController.add(true);
+      }
     } finally {
       _busy = false;
     }
@@ -82,6 +119,7 @@ class MlKitService {
     await _faceDetector.close();
     await _segmenter.close();
     await _resultController.close();
+    await _availabilityController.close();
   }
 }
 

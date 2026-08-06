@@ -62,8 +62,7 @@ EditorialScore calculateReferenceScore(
     background = (backgroundRaw * 100).round();
   }
 
-  final depthFactor = scene.depthEstimate != null ? 1.0 : 0.7;
-  final story = (depthFactor * 75).round();
+  final story = _storyScore(scene);
 
   final breakdown = {
     'composition': composition,
@@ -99,6 +98,12 @@ EditorialScore calculateReferenceScore(
     breakdown: breakdown,
     nextSuggestion: suggestion,
   );
+}
+
+int _storyScore(SceneProfile scene) {
+  final depthEstimate = scene.depthEstimate;
+  if (depthEstimate == null) return 50;
+  return (depthEstimate.clamp(0.0, 1.0) * 100).round();
 }
 
 int _compositionScore(

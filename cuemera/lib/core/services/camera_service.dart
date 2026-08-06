@@ -1,7 +1,10 @@
 // core/services/camera_service.dart
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gal/gal.dart';
+
+import 'error_reporting_service.dart';
 
 class CameraService {
   CameraController? _controller;
@@ -23,6 +26,24 @@ class CameraService {
 
   double get minZoom => _minZoom;
   double get maxZoom => _maxZoom;
+
+  /// Wall-clock time the most recent [capture] spent creating+initializing
+  /// the temporary max-resolution `CameraController`, from the moment the
+  /// live stream was stopped to the moment `initialize()` returned.
+  Duration? lastCaptureControllerSetupLatency;
+
+  /// Wall-clock time the most recent [capture] spent inside
+  /// `takePicture()` itself, once the temporary controller was ready.
+  Duration? lastCaptureShutterLatency;
+
+  /// Wall-clock time the most recent [capture] spent disposing the
+  /// temporary controller.
+  Duration? lastCaptureControllerTeardownLatency;
+
+  /// Whether the most recent [capture] successfully saved to the device
+  /// gallery. `null` means no capture has completed yet; `false` covers
+  /// both a denied gallery permission and a thrown `Gal` exception.
+  bool? lastGallerySaveSucceeded;
 
   Future<void> init() async {
     _cameras = await availableCameras();
@@ -71,12 +92,30 @@ class CameraService {
     );
 
     String? path;
+    final setupStopwatch = Stopwatch()..start();
     try {
       await captureController.initialize();
+      setupStopwatch.stop();
+      lastCaptureControllerSetupLatency = setupStopwatch.elapsed;
+
+      final shutterStopwatch = Stopwatch()..start();
       final file = await captureController.takePicture();
+      shutterStopwatch.stop();
+      lastCaptureShutterLatency = shutterStopwatch.elapsed;
+
       path = file.path;
     } finally {
+      final teardownStopwatch = Stopwatch()..start();
       await captureController.dispose();
+      teardownStopwatch.stop();
+      lastCaptureControllerTeardownLatency = teardownStopwatch.elapsed;
+
+      debugPrint(
+        '[CameraService] capture() latency — '
+        'setup: ${lastCaptureControllerSetupLatency?.inMilliseconds}ms, '
+        'shutter: ${lastCaptureShutterLatency?.inMilliseconds}ms, '
+        'teardown: ${lastCaptureControllerTeardownLatency?.inMilliseconds}ms',
+      );
     }
 
     if (path != null) {
@@ -84,8 +123,18 @@ class CameraService {
         final hasAccess = await Gal.requestAccess();
         if (hasAccess) {
           await Gal.putImage(path);
+          lastGallerySaveSucceeded = true;
+        } else {
+          lastGallerySaveSucceeded = false;
         }
-      } catch (_) {}
+      } catch (e, st) {
+        lastGallerySaveSucceeded = false;
+        ErrorReportingService.instance.report(
+          e,
+          st,
+          context: 'CameraService: gallery save',
+        );
+      }
     }
 
     return path;

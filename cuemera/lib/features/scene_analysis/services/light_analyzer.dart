@@ -1,4 +1,6 @@
 // features/scene_analysis/services/light_analyzer.dart
+import 'dart:math' as math;
+
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 
@@ -116,26 +118,9 @@ class LightAnalyzer {
   }
 
   double _atan2Degrees(double y, double x) {
-    final radians = _atan2(y, x);
-    var degrees = radians * 180 / 3.141592653589793;
+    var degrees = math.atan2(y, x) * 180 / math.pi;
     if (degrees < 0) degrees += 360;
     return degrees;
-  }
-
-  double _atan2(double y, double x) {
-    if (x == 0 && y == 0) return 0;
-    if (x > 0) return _atan(y / x);
-    if (x < 0 && y >= 0) return _atan(y / x) + 3.141592653589793;
-    if (x < 0 && y < 0) return _atan(y / x) - 3.141592653589793;
-    if (x == 0 && y > 0) return 3.141592653589793 / 2;
-    return -3.141592653589793 / 2;
-  }
-
-  double _atan(double z) {
-    return z -
-        (z * z * z) / 3 +
-        (z * z * z * z * z) / 5 -
-        (z * z * z * z * z * z * z) / 7;
   }
 
   double _estimateNegativeSpace(CameraImage image, SegmentationMask? mask) {

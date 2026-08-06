@@ -28,6 +28,23 @@ final sceneProfileProvider = StateProvider<SceneProfile>((ref) {
 final onFrameCallbackProvider =
     StateProvider<void Function(CameraImage image)?>((ref) => null);
 
+/// True once `MlKitService` has confirmed it's failing consistently
+/// (typically the on-device pose/face/segmentation models failed to
+/// download or initialize). Camera_screen shows a persistent banner while
+/// this is true so the user knows why coaching/auto-capture have gone
+/// quiet, instead of the app just silently doing nothing.
+final mlKitUnavailableProvider = StateProvider<bool>((ref) => false);
+
+final mlKitAvailabilityListenerProvider = Provider<void>((ref) {
+  final mlKitService = ref.watch(mlKitServiceProvider);
+
+  final subscription = mlKitService.unavailableStream.listen((unavailable) {
+    ref.read(mlKitUnavailableProvider.notifier).state = unavailable;
+  });
+
+  ref.onDispose(subscription.cancel);
+});
+
 final poseAnalyzerProvider = Provider<PoseAnalyzer>((ref) => PoseAnalyzer());
 final faceAnalyzerProvider = Provider<FaceAnalyzer>((ref) => FaceAnalyzer());
 final trackingEngineProvider = Provider<TrackingEngine>((ref) {

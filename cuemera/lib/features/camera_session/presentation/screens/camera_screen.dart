@@ -147,6 +147,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final imagePath = await cameraService.capture();
     if (!mounted) return;
 
+    if (cameraService.lastGallerySaveSucceeded == false) {
+      ref.read(gallerySaveWarningProvider.notifier).state =
+          gallerySaveFailedMessage;
+    }
+
     final referenceAsync = ref.read(referenceProfileProvider);
     final reference = referenceAsync.valueOrNull;
     if (reference == null) return;
@@ -336,6 +341,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     ref.watch(sceneAnalysisListenerProvider);
     ref.watch(voiceDirectorListenerProvider);
+    ref.watch(mlKitAvailabilityListenerProvider);
 
     ref.listen<Shot?>(capturedShotProvider, (previous, shot) {
       if (shot == null) return;
@@ -352,6 +358,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     });
 
     ref.watch(autoCaptureProvider);
+
+    ref.listen<String?>(gallerySaveWarningProvider, (previous, message) {
+      if (message == null) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      ref.read(gallerySaveWarningProvider.notifier).state = null;
+    });
 
     return PopScope(
       canPop: false,
@@ -420,6 +434,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final score = ref.watch(currentScoreProvider);
     final trackingProgress = ref.watch(trackingProgressProvider);
     final selectedReferencePath = ref.watch(selectedReferenceImagePathProvider);
+    final mlKitUnavailable = ref.watch(mlKitUnavailableProvider);
 
     final topInset = MediaQuery.of(context).padding.top;
     final bottomInset = MediaQuery.of(context).padding.bottom;
@@ -449,6 +464,32 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             ),
           ),
         if (kDebugMode) DebugPerfOverlay(key: _debugPerfOverlayKey),
+        if (mlKitUnavailable)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                color: colors.warning.withOpacity(0.9),
+                child: Text(
+                  'Pose/face detection is unavailable on this device. '
+                  'Voice coaching and auto-capture are off — you can still '
+                  'capture manually.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.caption(
+                    colors,
+                  ).copyWith(color: colors.background),
+                ),
+              ),
+            ),
+          ),
         Positioned(
           top: clusterTop,
           left: AppSpacing.md,

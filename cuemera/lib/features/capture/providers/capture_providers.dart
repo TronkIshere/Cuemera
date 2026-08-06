@@ -14,6 +14,15 @@ final selectedShotTypeProvider = StateProvider<String>(
   (ref) => AlbumState.shotTypes.first,
 );
 
+/// Set to a user-facing message whenever the most recent capture (manual
+/// or auto) saved to the local album fine but failed to save to the
+/// device gallery. `camera_screen.dart` listens to this and shows a
+/// snackbar, then clears it back to null.
+final gallerySaveWarningProvider = StateProvider<String?>((ref) => null);
+
+const gallerySaveFailedMessage =
+    "Couldn't save to your gallery — the photo is still in your album.";
+
 final autoCaptureServiceProvider = Provider<AutoCaptureService>((ref) {
   return AutoCaptureService();
 });
@@ -55,6 +64,10 @@ final autoCaptureProvider = Provider<void>((ref) {
     await autoCaptureService.triggerCapture();
 
     final imagePath = await cameraService.capture();
+    if (cameraService.lastGallerySaveSucceeded == false) {
+      ref.read(gallerySaveWarningProvider.notifier).state =
+          gallerySaveFailedMessage;
+    }
 
     final subject = ref.read(subjectProfileProvider);
     final scene = ref.read(sceneProfileProvider);

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:cuemera/features/reference_photo/domain/models/reference_profile.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart' show HSLColor, Offset;
 import 'package:flutter/painting.dart' show FileImage;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -12,6 +11,7 @@ import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentatio
 import 'package:image/image.dart' as img;
 import 'package:palette_generator/palette_generator.dart';
 
+import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/expression_classifier.dart';
 import '../domain/comparison_math.dart';
 
@@ -74,7 +74,11 @@ class ReferenceImageAnalyzer {
         if (points.any((p) => p != null)) poseLandmarkPoints = points;
       }
     } catch (e, st) {
-      debugPrint('ReferenceImageAnalyzer: pose detection failed: $e\n$st');
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'ReferenceImageAnalyzer: pose detection',
+      );
     } finally {
       await poseDetector.close();
     }
@@ -175,7 +179,11 @@ class ReferenceImageAnalyzer {
             : (leftEyeRatio ?? rightEyeRatio);
       }
     } catch (e, st) {
-      debugPrint('ReferenceImageAnalyzer: face detection failed: $e\n$st');
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'ReferenceImageAnalyzer: face detection',
+      );
     } finally {
       await faceDetector.close();
     }
@@ -191,7 +199,11 @@ class ReferenceImageAnalyzer {
     try {
       mask = await segmenter.processImage(inputImage);
     } catch (e, st) {
-      debugPrint('ReferenceImageAnalyzer: segmentation failed: $e\n$st');
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'ReferenceImageAnalyzer: segmentation',
+      );
     } finally {
       await segmenter.close();
     }
@@ -207,7 +219,11 @@ class ReferenceImageAnalyzer {
         imageHeight = decoded.height.toDouble();
       }
     } catch (e, st) {
-      debugPrint('ReferenceImageAnalyzer: image decode failed: $e\n$st');
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'ReferenceImageAnalyzer: image decode',
+      );
     }
 
     if (mask != null) {
@@ -239,7 +255,11 @@ class ReferenceImageAnalyzer {
         );
       }
     } catch (e, st) {
-      debugPrint('ReferenceImageAnalyzer: palette generation failed: $e\n$st');
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'ReferenceImageAnalyzer: palette generation',
+      );
     }
 
     return ReferenceProfile(
@@ -296,9 +316,9 @@ class ReferenceImageAnalyzer {
   }
 
   double? _estimateSymmetry(
-      SegmentationMask mask,
-      double? shoulderAngleDegrees,
-      ) {
+    SegmentationMask mask,
+    double? shoulderAngleDegrees,
+  ) {
     if (shoulderAngleDegrees != null) {
       final angle = shoulderAngleDegrees.abs();
       return (1.0 - (angle / 45.0)).clamp(0.0, 1.0);

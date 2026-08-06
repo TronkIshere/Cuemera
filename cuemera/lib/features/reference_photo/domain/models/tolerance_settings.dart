@@ -32,4 +32,22 @@ class ToleranceSettings {
       colorTolerance: colorTolerance ?? this.colorTolerance,
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'poseTolerance': poseTolerance,
+      'compositionTolerance': compositionTolerance,
+      'expressionTolerance': expressionTolerance,
+      'colorTolerance': colorTolerance,
+    };
+  }
+
+  factory ToleranceSettings.fromMap(Map<String, dynamic> map) {
+    return ToleranceSettings(
+      poseTolerance: (map['poseTolerance'] as num).toDouble(),
+      compositionTolerance: (map['compositionTolerance'] as num).toDouble(),
+      expressionTolerance: (map['expressionTolerance'] as num).toDouble(),
+      colorTolerance: (map['colorTolerance'] as num).toDouble(),
+    );
+  }
 }

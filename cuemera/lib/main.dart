@@ -1,14 +1,42 @@
 // lib/main.dart
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/services/error_reporting_service.dart';
 import 'core/services/theme_preference_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/splash/presentation/screens/splash_screen.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ProviderScope(child: MyApp()));
+  FlutterError.onError = (details) {
+    ErrorReportingService.instance.reportFlutterError(details);
+  };
+
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    ErrorReportingService.instance.report(
+      error,
+      stackTrace,
+      context: 'PlatformDispatcher',
+    );
+    return true;
+  };
+
+  runZonedGuarded(
+    () {
+      WidgetsFlutterBinding.ensureInitialized();
+      runApp(const ProviderScope(child: MyApp()));
+    },
+    (error, stackTrace) {
+      ErrorReportingService.instance.report(
+        error,
+        stackTrace,
+        context: 'runZonedGuarded',
+      );
+    },
+  );
 }
 
 class MyApp extends ConsumerWidget {

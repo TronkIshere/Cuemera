@@ -6,6 +6,18 @@ import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
 import 'priority_engine.dart';
 
+/// Picks a phrase variant scaled to how far off the attribute is.
+/// [severity] is 0..10 (see ComparisonMath.normalizedSeverity * 10).
+/// Mild/moderate/strong tiers keep the coaching specific to how far off
+/// the subject actually is, instead of one fixed sentence regardless of
+/// deviation size.
+String _tieredPhrase(int severity, List<String> tiers) {
+  assert(tiers.length == 3, 'Expected [mild, moderate, strong] phrases');
+  if (severity <= 3) return tiers[0];
+  if (severity <= 7) return tiers[1];
+  return tiers[2];
+}
+
 class ReferenceComparisonEngine {
   PriorityAction? evaluate({
     required SubjectProfile subject,
@@ -100,12 +112,21 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
+    final severity = (normalizedSeverity * 10).round();
     final phrase = subjectValue > referenceValue
-        ? 'Square your shoulders more'
-        : 'Angle your shoulders like the reference';
+        ? _tieredPhrase(severity, const [
+            'Square your shoulders just a touch',
+            'Square your shoulders more',
+            "Square your shoulders a lot more — they're quite off",
+          ])
+        : _tieredPhrase(severity, const [
+            'Angle your shoulders slightly, like the reference',
+            'Angle your shoulders like the reference',
+            'Angle your shoulders much more, like the reference',
+          ]);
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
+      severity: severity,
       deviationExceedsThreshold: deviationExceedsThreshold,
       phrase: phrase,
     );
@@ -138,10 +159,17 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
+    final severity = (normalizedSeverity * 10).round();
+    final phrase = _tieredPhrase(severity, const [
+      'Adjust your framing slightly to match the reference',
+      'Match your framing to the reference photo',
+      "Reframe quite a bit — you're far from the reference's framing",
+    ]);
+
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
+      severity: severity,
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Match your framing to the reference photo',
+      phrase: phrase,
     );
   }
 
@@ -164,10 +192,22 @@ class ReferenceComparisonEngine {
       thresholdForExpression,
     );
 
+    // Expression match is binary (0.0 or 1.0), so severity only ever lands
+    // in the "strong" tier when it doesn't match — one phrase is enough,
+    // but kept as a tiered call for consistency with the other evaluators
+    // and to make future severity-aware phrasing (e.g. partial-match
+    // scoring from a learned classifier) a drop-in change.
+    final severity = (deviation * 10).round();
+    final phrase = _tieredPhrase(severity, const [
+      'Match the expression in your reference photo',
+      'Match the expression in your reference photo',
+      'Match the expression in your reference photo more closely',
+    ]);
+
     return _AttributeEvaluation(
-      severity: (deviation * 10).round(),
+      severity: severity,
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Match the expression in your reference photo',
+      phrase: phrase,
     );
   }
 
@@ -193,12 +233,21 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
+    final severity = (normalizedSeverity * 10).round();
     final phrase = subjectValue > referenceValue
-        ? 'Fill the frame more, like your reference'
-        : 'Give more space in the frame, like your reference';
+        ? _tieredPhrase(severity, const [
+            'Fill the frame a little more, like your reference',
+            'Fill the frame more, like your reference',
+            'Fill the frame a lot more, like your reference',
+          ])
+        : _tieredPhrase(severity, const [
+            'Give a little more space in the frame, like your reference',
+            'Give more space in the frame, like your reference',
+            'Give a lot more space in the frame, like your reference',
+          ]);
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
+      severity: severity,
       deviationExceedsThreshold: deviationExceedsThreshold,
       phrase: phrase,
     );
@@ -226,10 +275,17 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
+    final severity = (normalizedSeverity * 10).round();
+    final phrase = _tieredPhrase(severity, const [
+      'Center yourself a bit more, like the reference',
+      'Center yourself like the reference',
+      "Center yourself a lot more — you're quite off to one side",
+    ]);
+
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
+      severity: severity,
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Center yourself like the reference',
+      phrase: phrase,
     );
   }
 
@@ -255,12 +311,21 @@ class ReferenceComparisonEngine {
       thresholdForColor,
     );
 
+    final severity = (normalizedSeverity * 10).round();
     final phrase = subjectValue > referenceValue
-        ? 'Move to softer light, like your reference'
-        : 'Find more light, like your reference';
+        ? _tieredPhrase(severity, const [
+            'Move to slightly softer light, like your reference',
+            'Move to softer light, like your reference',
+            'Move to much softer light, like your reference',
+          ])
+        : _tieredPhrase(severity, const [
+            'Find a little more light, like your reference',
+            'Find more light, like your reference',
+            'Find a lot more light, like your reference',
+          ]);
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
+      severity: severity,
       deviationExceedsThreshold: deviationExceedsThreshold,
       phrase: phrase,
     );
@@ -293,12 +358,21 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
+    final severity = (normalizedSeverity * 10).round();
     final phrase = subjectValue > normalizedReferenceValue
-        ? 'Clean up the background, like your reference'
-        : 'Add some background interest, like your reference';
+        ? _tieredPhrase(severity, const [
+            'Tidy the background a little, like your reference',
+            'Clean up the background, like your reference',
+            'Clean up the background a lot, like your reference',
+          ])
+        : _tieredPhrase(severity, const [
+            'Add a touch of background interest, like your reference',
+            'Add some background interest, like your reference',
+            'Add a lot more background interest, like your reference',
+          ]);
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
+      severity: severity,
       deviationExceedsThreshold: deviationExceedsThreshold,
       phrase: phrase,
     );
