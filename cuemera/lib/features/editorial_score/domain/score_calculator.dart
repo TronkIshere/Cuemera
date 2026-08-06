@@ -72,20 +72,12 @@ EditorialScore calculateReferenceScore(
     'story': story,
   };
 
-  const weights = {
-    'composition': 0.2,
-    'lighting': 0.2,
-    'expression': 0.2,
-    'background': 0.2,
-    'story': 0.2,
-  };
+  // All five categories are weighted equally, so the weighted sum reduces
+  // to a plain average — no need for a weights map or a fallback that
+  // could never trigger (every key in breakdown is also a key here).
+  final average = breakdown.values.reduce((a, b) => a + b) / breakdown.length;
 
-  double weightedSum = 0;
-  for (final entry in breakdown.entries) {
-    weightedSum += entry.value * (weights[entry.key] ?? 0.2);
-  }
-
-  final overall = weightedSum.round().clamp(0, 100);
+  final overall = average.round().clamp(0, 100);
 
   String? suggestion;
   final lowest = breakdown.entries.reduce((a, b) => a.value < b.value ? a : b);

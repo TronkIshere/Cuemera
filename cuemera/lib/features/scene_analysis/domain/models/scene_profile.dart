@@ -20,27 +20,36 @@ class SceneProfile {
   final double? liveWarmthScore;
   final double? liveDominantHue;
 
+  static const Object _unset = Object();
+
   SceneProfile copyWith({
     double? brightness,
-    double? lightDirectionDegrees,
+    Object? lightDirectionDegrees = _unset,
     double? negativeSpaceScore,
     double? symmetryScore,
     int? backgroundClutterCount,
-    double? depthEstimate,
-    double? liveWarmthScore,
-    double? liveDominantHue,
+    Object? depthEstimate = _unset,
+    Object? liveWarmthScore = _unset,
+    Object? liveDominantHue = _unset,
   }) {
     return SceneProfile(
       brightness: brightness ?? this.brightness,
-      lightDirectionDegrees:
-          lightDirectionDegrees ?? this.lightDirectionDegrees,
+      lightDirectionDegrees: identical(lightDirectionDegrees, _unset)
+          ? this.lightDirectionDegrees
+          : lightDirectionDegrees as double?,
       negativeSpaceScore: negativeSpaceScore ?? this.negativeSpaceScore,
       symmetryScore: symmetryScore ?? this.symmetryScore,
       backgroundClutterCount:
           backgroundClutterCount ?? this.backgroundClutterCount,
-      depthEstimate: depthEstimate ?? this.depthEstimate,
-      liveWarmthScore: liveWarmthScore ?? this.liveWarmthScore,
-      liveDominantHue: liveDominantHue ?? this.liveDominantHue,
+      depthEstimate: identical(depthEstimate, _unset)
+          ? this.depthEstimate
+          : depthEstimate as double?,
+      liveWarmthScore: identical(liveWarmthScore, _unset)
+          ? this.liveWarmthScore
+          : liveWarmthScore as double?,
+      liveDominantHue: identical(liveDominantHue, _unset)
+          ? this.liveDominantHue
+          : liveDominantHue as double?,
     );
   }
 }

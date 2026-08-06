@@ -8,91 +8,25 @@ import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
 
 class ReferenceComparisonEngine {
-  PriorityAction? evaluate({
-    required SubjectProfile subject,
-    required SceneProfile scene,
-    required ReferenceProfile reference,
-    required ToleranceSettings tolerance,
+  static const double _mildSeverityCeiling = 0.4;
+  static const double _moderateSeverityCeiling = 0.75;
+  static const bool _faceRollDirectionIsMirrored = false;
+
+  String _tieredPhrase(
+    double normalizedSeverity, {
+    required String mild,
+    required String moderate,
+    required String strong,
   }) {
-    final candidates = <_AttributeEvaluation>[];
+    if (normalizedSeverity < _mildSeverityCeiling) return mild;
+    if (normalizedSeverity < _moderateSeverityCeiling) return moderate;
+    return strong;
+  }
 
-    final shoulderEvaluation = _evaluateShoulderAngle(
-      subject,
-      reference,
-      tolerance,
-    );
-    if (shoulderEvaluation != null) candidates.add(shoulderEvaluation);
-
-    final facePitchEvaluation = _evaluateFacePitch(
-      subject,
-      reference,
-      tolerance,
-    );
-    if (facePitchEvaluation != null) candidates.add(facePitchEvaluation);
-
-    final faceRollEvaluation = _evaluateFaceRoll(subject, reference, tolerance);
-    if (faceRollEvaluation != null) candidates.add(faceRollEvaluation);
-
-    final bodyRatioEvaluation = _evaluateBodyRatio(
-      subject,
-      reference,
-      tolerance,
-    );
-    if (bodyRatioEvaluation != null) candidates.add(bodyRatioEvaluation);
-
-    final mouthOpenEvaluation = _evaluateMouthOpen(
-      subject,
-      reference,
-      tolerance,
-    );
-    if (mouthOpenEvaluation != null) candidates.add(mouthOpenEvaluation);
-
-    final eyeOpenEvaluation = _evaluateEyeOpen(subject, reference, tolerance);
-    if (eyeOpenEvaluation != null) candidates.add(eyeOpenEvaluation);
-
-    final expressionEvaluation = _evaluateExpression(
-      subject,
-      reference,
-      tolerance,
-    );
-    if (expressionEvaluation != null) candidates.add(expressionEvaluation);
-
-    final negativeSpaceEvaluation = _evaluateNegativeSpace(
-      scene,
-      reference,
-      tolerance,
-    );
-    if (negativeSpaceEvaluation != null)
-      candidates.add(negativeSpaceEvaluation);
-
-    final symmetryEvaluation = _evaluateSymmetry(scene, reference, tolerance);
-    if (symmetryEvaluation != null) candidates.add(symmetryEvaluation);
-
-    final brightnessEvaluation = _evaluateBrightness(
-      scene,
-      reference,
-      tolerance,
-    );
-    if (brightnessEvaluation != null) candidates.add(brightnessEvaluation);
-
-    final backgroundClutterEvaluation = _evaluateBackgroundClutter(
-      scene,
-      reference,
-      tolerance,
-    );
-    if (backgroundClutterEvaluation != null)
-      candidates.add(backgroundClutterEvaluation);
-
-    final warmthEvaluation = _evaluateWarmth(scene, reference, tolerance);
-    if (warmthEvaluation != null) candidates.add(warmthEvaluation);
-
-    final hueEvaluation = _evaluateHue(scene, reference, tolerance);
-    if (hueEvaluation != null) candidates.add(hueEvaluation);
-
-    final exceeding = candidates
+  PriorityAction? _pickWorst(List<_AttributeEvaluation> tier) {
+    final exceeding = tier
         .where((candidate) => candidate.deviationExceedsThreshold)
         .toList();
-
     if (exceeding.isEmpty) return null;
 
     exceeding.sort((a, b) => b.severity.compareTo(a.severity));
@@ -103,6 +37,77 @@ class ReferenceComparisonEngine {
       severity: worst.severity,
       sourceLayer: 'reference_comparison_engine',
     );
+  }
+
+  PriorityAction? evaluate({
+    required SubjectProfile subject,
+    required SceneProfile scene,
+    required ReferenceProfile reference,
+    required ToleranceSettings tolerance,
+  }) {
+    final poseAndFaceTier = <_AttributeEvaluation>[];
+    final compositionTier = <_AttributeEvaluation>[];
+    final lightingTier = <_AttributeEvaluation>[];
+
+    void addIfPresent(
+      List<_AttributeEvaluation> tier,
+      _AttributeEvaluation? evaluation,
+    ) {
+      if (evaluation != null) tier.add(evaluation);
+    }
+
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateShoulderAngle(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateFacePitch(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateFaceRoll(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateBodyRatio(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateMouthOpen(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateEyeOpen(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateExpression(subject, reference, tolerance),
+    );
+
+    addIfPresent(
+      compositionTier,
+      _evaluateNegativeSpace(scene, reference, tolerance),
+    );
+    addIfPresent(
+      compositionTier,
+      _evaluateSymmetry(scene, reference, tolerance),
+    );
+    addIfPresent(
+      compositionTier,
+      _evaluateBackgroundClutter(scene, reference, tolerance),
+    );
+
+    addIfPresent(
+      lightingTier,
+      _evaluateBrightness(scene, reference, tolerance),
+    );
+    addIfPresent(lightingTier, _evaluateWarmth(scene, reference, tolerance));
+    addIfPresent(lightingTier, _evaluateHue(scene, reference, tolerance));
+
+    return _pickWorst(poseAndFaceTier) ??
+        _pickWorst(compositionTier) ??
+        _pickWorst(lightingTier);
   }
 
   _AttributeEvaluation? _evaluateShoulderAngle(
@@ -128,8 +133,20 @@ class ReferenceComparisonEngine {
     );
 
     final phrase = subjectValue > referenceValue
-        ? 'Square your shoulders more'
-        : 'Angle your shoulders like the reference';
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Square your shoulders just a touch',
+            moderate: 'Square your shoulders more',
+            strong:
+                "Really square up your shoulders — they're tilted well off the reference",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Angle your shoulders slightly, like the reference',
+            moderate: 'Angle your shoulders more, like the reference',
+            strong:
+                "Angle your shoulders a lot more — match the reference's tilt",
+          );
 
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
@@ -161,8 +178,20 @@ class ReferenceComparisonEngine {
     );
 
     final phrase = subjectValue > referenceValue
-        ? 'Tilt your head down'
-        : 'Tilt your head up';
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Tilt your chin down just a touch',
+            moderate: 'Tilt your head down',
+            strong:
+                "Tilt your head down a lot more — you're well above the reference angle",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Lift your chin slightly',
+            moderate: 'Tilt your head up',
+            strong:
+                "Tilt your head up a lot more — you're well below the reference angle",
+          );
 
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
@@ -193,10 +222,30 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
+    final subjectTiltedMoreTowardRight = _faceRollDirectionIsMirrored
+        ? subjectValue < referenceValue
+        : subjectValue > referenceValue;
+
+    final phrase = subjectTiltedMoreTowardRight
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Straighten your head just a touch',
+            moderate: "Straighten your head — it's tilted to the right",
+            strong:
+                "Straighten your head — it's tilted well to the right compared to the reference",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Straighten your head just a touch',
+            moderate: "Straighten your head — it's tilted to the left",
+            strong:
+                "Straighten your head — it's tilted well to the left compared to the reference",
+          );
+
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Straighten your head, like the reference',
+      phrase: phrase,
     );
   }
 
@@ -227,10 +276,18 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
+    final phrase = _tieredPhrase(
+      normalizedSeverity,
+      mild: "Your framing's a touch different from the reference",
+      moderate: 'Adjust your framing to better match the reference proportions',
+      strong:
+          'Your framing is quite different from the reference — reframe to match',
+    );
+
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Match your framing to the reference photo',
+      phrase: phrase,
     );
   }
 
@@ -261,10 +318,26 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
+    final phrase = subjectValue > referenceValue
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Close your mouth just slightly',
+            moderate: 'Close your mouth a bit more, like the reference',
+            strong:
+                "Your mouth is a lot more open than the reference — close it more",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Open your mouth just slightly, like the reference',
+            moderate: 'Open your mouth more, like the reference',
+            strong:
+                "Your mouth is a lot more closed than the reference — open it more",
+          );
+
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Match your mouth expression to the reference',
+      phrase: phrase,
     );
   }
 
@@ -295,10 +368,26 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
+    final phrase = subjectValue > referenceValue
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Relax your eyes just a touch',
+            moderate: 'Ease your eyes to match the reference',
+            strong:
+                "Your eyes are much more open than the reference — relax them more",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Open your eyes just a touch more',
+            moderate: 'Open your eyes more, like the reference',
+            strong:
+                "Your eyes are much more closed than the reference — open them more",
+          );
+
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Match your eye expression to the reference',
+      phrase: phrase,
     );
   }
 
@@ -321,10 +410,13 @@ class ReferenceComparisonEngine {
       thresholdForExpression,
     );
 
+    final phrase =
+        "Try a more '$referenceValue' expression, like the reference";
+
     return _AttributeEvaluation(
       severity: (deviation * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Match the expression in your reference photo',
+      phrase: phrase,
     );
   }
 
@@ -351,8 +443,20 @@ class ReferenceComparisonEngine {
     );
 
     final phrase = subjectValue > referenceValue
-        ? 'Fill the frame more, like your reference'
-        : 'Give more space in the frame, like your reference';
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Fill the frame just a touch more',
+            moderate: 'Fill the frame more, like your reference',
+            strong:
+                "There's a lot more empty space around you than the reference — fill the frame more",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Give a touch more space in the frame',
+            moderate: 'Give more space in the frame, like your reference',
+            strong:
+                "You're filling the frame a lot more than the reference — give more space around you",
+          );
 
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
@@ -383,10 +487,18 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
+    final phrase = _tieredPhrase(
+      normalizedSeverity,
+      mild: 'Center yourself just a touch more',
+      moderate: 'Center yourself more, like the reference',
+      strong:
+          "You're quite off-center — center yourself to match the reference",
+    );
+
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Center yourself like the reference',
+      phrase: phrase,
     );
   }
 
@@ -413,8 +525,20 @@ class ReferenceComparisonEngine {
     );
 
     final phrase = subjectValue > referenceValue
-        ? 'Move to softer light, like your reference'
-        : 'Find more light, like your reference';
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Move to slightly softer light, like your reference',
+            moderate: 'Move to softer light, like your reference',
+            strong:
+                "You're in much brighter light than the reference — move somewhere softer",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Find a touch more light, like your reference',
+            moderate: 'Find more light, like your reference',
+            strong:
+                "You're in much dimmer light than the reference — find somewhere brighter",
+          );
 
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
@@ -451,8 +575,20 @@ class ReferenceComparisonEngine {
     );
 
     final phrase = subjectValue > normalizedReferenceValue
-        ? 'Clean up the background, like your reference'
-        : 'Add some background interest, like your reference';
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Clean up the background just a touch, like your reference',
+            moderate: 'Clean up the background, like your reference',
+            strong:
+                "Your background is a lot busier than the reference — clean it up",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Add a touch of background interest, like your reference',
+            moderate: 'Add some background interest, like your reference',
+            strong:
+                "Your background is a lot plainer than the reference — add some interest",
+          );
 
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
@@ -484,8 +620,20 @@ class ReferenceComparisonEngine {
     );
 
     final phrase = subjectValue < referenceValue
-        ? 'Find warmer tones, like your reference'
-        : 'Cool down the tones, like your reference';
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Find slightly warmer tones, like your reference',
+            moderate: 'Find warmer tones, like your reference',
+            strong:
+                "Your tones are a lot cooler than the reference — find much warmer light",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Cool down the tones just a touch, like your reference',
+            moderate: 'Cool down the tones, like your reference',
+            strong:
+                "Your tones are a lot warmer than the reference — find much cooler light",
+          );
 
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
@@ -520,10 +668,18 @@ class ReferenceComparisonEngine {
       thresholdForHue,
     );
 
+    final phrase = _tieredPhrase(
+      normalizedSeverity,
+      mild: 'Your color tone is slightly off from the reference',
+      moderate: 'Match the color tone of your reference more closely',
+      strong:
+          "Your color tone is quite different from the reference — try to match it",
+    );
+
     return _AttributeEvaluation(
       severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: 'Match the color tone of your reference',
+      phrase: phrase,
     );
   }
 }
