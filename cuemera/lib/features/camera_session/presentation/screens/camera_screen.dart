@@ -14,7 +14,6 @@ import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
 import '../../../../shared/widgets/score_badge.dart';
-import '../../../../shared/widgets/target_zone_overlay.dart';
 import '../../../album/domain/models/shot.dart';
 import '../../../album/presentation/screens/album_screen.dart';
 import '../../../album/providers/album_providers.dart';
@@ -133,10 +132,20 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final controller = cameraService.controller;
     if (controller == null) return;
 
+    final sensorOrientation = controller.description.sensorOrientation;
+    // Front-facing sensors are mounted mirrored relative to back-facing
+    // ones, so ML Kit needs a different rotation-compensation formula for
+    // the front camera — using the back-camera formula for both (as
+    // before) rotates front-camera landmarks incorrectly, which showed up
+    // as persistently wrong shoulder/pose readings when using the front
+    // (selfie) camera specifically.
+    final rotationCompensation =
+        controller.description.lensDirection == CameraLensDirection.front
+        ? (360 - sensorOrientation) % 360
+        : sensorOrientation;
+
     final rotation =
-        InputImageRotationValue.fromRawValue(
-          controller.description.sensorOrientation,
-        ) ??
+        InputImageRotationValue.fromRawValue(rotationCompensation) ??
         InputImageRotation.rotation0deg;
 
     mlKitService.processImage(image, controller.description, rotation);
@@ -361,10 +370,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     ref.listen<String?>(gallerySaveWarningProvider, (previous, message) {
       if (message == null) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-      ref.read(gallerySaveWarningProvider.notifier).state = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+        ref.read(gallerySaveWarningProvider.notifier).state = null;
+      });
     });
 
     return PopScope(
@@ -432,7 +444,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final subject = ref.watch(subjectProfileProvider);
     final nextAction = ref.watch(nextActionProvider);
     final score = ref.watch(currentScoreProvider);
-    final trackingProgress = ref.watch(trackingProgressProvider);
     final selectedReferencePath = ref.watch(selectedReferenceImagePathProvider);
     final mlKitUnavailable = ref.watch(mlKitUnavailableProvider);
 
@@ -456,13 +467,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           onTapUp: _onTapUp,
           hasCaptured: _hasCaptured,
         ),
-        if (!_hasCaptured)
-          IgnorePointer(
-            child: TargetZoneOverlay(
-              aligned: trackingProgress >= 0.95,
-              trackingProgress: trackingProgress,
-            ),
-          ),
         if (kDebugMode) DebugPerfOverlay(key: _debugPerfOverlayKey),
         if (mlKitUnavailable)
           Positioned(

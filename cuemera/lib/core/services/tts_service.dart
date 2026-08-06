@@ -35,6 +35,7 @@ class TtsService {
 
 final ttsServiceProvider = Provider<TtsService>((ref) {
   final service = TtsService();
+  service.init();
   ref.onDispose(() => service.dispose());
   return service;
 });

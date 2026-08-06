@@ -226,6 +226,24 @@ class ReferenceAnalysisPainter extends CustomPainter {
     [_nose, _rightEye],
   ];
 
+  /// Limb-extremity landmarks. When a photo is framed to cut off before
+  /// these (e.g. a half-body shot ending at the knee), ML Kit sometimes
+  /// still reports a landmark here with enough likelihood to pass
+  /// [ReferenceImageAnalyzer]'s confidence filter, but at a wildly
+  /// extrapolated position since the joint isn't actually visible. These
+  /// are the landmarks checked against [_maxPlausibleSegmentScale] below.
+  static const Set<int> _extremityLandmarks = {
+    _leftWrist,
+    _rightWrist,
+    _leftAnkle,
+    _rightAnkle,
+  };
+
+  /// A skeleton segment longer than this multiple of shoulder/hip width
+  /// is treated as an implausible extrapolation rather than a real limb,
+  /// and its extremity endpoint is hidden instead of drawn.
+  static const double _maxPlausibleSegmentScale = 4.0;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (imageWidth <= 0 || imageHeight <= 0) return;
@@ -252,15 +270,22 @@ class ReferenceAnalysisPainter extends CustomPainter {
 
     final pose = poseLandmarkPoints;
     if (pose != null) {
+      final suspectIndices = _findSuspectExtremities(pose);
+
       for (final connection in _skeletonConnections) {
+        if (suspectIndices.contains(connection[0]) ||
+            suspectIndices.contains(connection[1])) {
+          continue;
+        }
         final start = connection[0] < pose.length ? pose[connection[0]] : null;
         final end = connection[1] < pose.length ? pose[connection[1]] : null;
         if (start != null && end != null) {
           canvas.drawLine(mapPoint(start), mapPoint(end), linePaint);
         }
       }
-      for (final point in pose) {
-        if (point != null) {
+      for (var i = 0; i < pose.length; i++) {
+        final point = pose[i];
+        if (point != null && !suspectIndices.contains(i)) {
           canvas.drawCircle(mapPoint(point), 3, pointPaint);
         }
       }
@@ -277,6 +302,62 @@ class ReferenceAnalysisPainter extends CustomPainter {
       );
       canvas.drawRect(rect, linePaint);
     }
+  }
+
+  /// Returns the indices of extremity landmarks (wrists/ankles) whose
+  /// distance from a directly-connected joint is implausibly large
+  /// relative to [_torsoScale] — a strong signal that ML Kit extrapolated
+  /// a position for a joint that's actually outside the photo, rather
+  /// than genuinely detecting it far from the body.
+  Set<int> _findSuspectExtremities(List<Offset?> pose) {
+    final scale = _torsoScale(pose);
+    if (scale == null) return const {};
+
+    final maxPlausibleLength = scale * _maxPlausibleSegmentScale;
+    final suspect = <int>{};
+
+    for (final connection in _skeletonConnections) {
+      final startIndex = connection[0];
+      final endIndex = connection[1];
+      final start = startIndex < pose.length ? pose[startIndex] : null;
+      final end = endIndex < pose.length ? pose[endIndex] : null;
+      if (start == null || end == null) continue;
+
+      final segmentLength = (end - start).distance;
+      if (segmentLength <= maxPlausibleLength) continue;
+
+      if (_extremityLandmarks.contains(endIndex)) {
+        suspect.add(endIndex);
+      } else if (_extremityLandmarks.contains(startIndex)) {
+        suspect.add(startIndex);
+      }
+    }
+
+    return suspect;
+  }
+
+  /// A stable body-scale reference (shoulder width, falling back to hip
+  /// width) to judge whether a limb segment's length is plausible.
+  /// Returns null when neither pair is available, in which case outlier
+  /// filtering is skipped entirely rather than guessing.
+  double? _torsoScale(List<Offset?> pose) {
+    final leftShoulder = _leftShoulder < pose.length
+        ? pose[_leftShoulder]
+        : null;
+    final rightShoulder = _rightShoulder < pose.length
+        ? pose[_rightShoulder]
+        : null;
+    if (leftShoulder != null && rightShoulder != null) {
+      return (rightShoulder - leftShoulder).distance;
+    }
+
+    final leftHip = _leftHip < pose.length ? pose[_leftHip] : null;
+    final rightHip = _rightHip < pose.length ? pose[_rightHip] : null;
+    if (leftHip != null && rightHip != null) {
+      return (rightHip - leftHip).distance;
+    }
+
+    return null;
   }
 
   @override
