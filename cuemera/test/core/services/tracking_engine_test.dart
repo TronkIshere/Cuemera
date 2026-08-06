@@ -9,6 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 SubjectProfile _subject({
   double? bodyRatio,
   double? faceAngleDegrees,
+  double? faceAngleXDegrees,
+  double? faceAngleZDegrees,
+  double? mouthOpenRatio,
+  double? eyeOpenRatio,
   double? shoulderAngleDegrees,
   bool? eyesOpen,
   String? expression,
@@ -16,6 +20,10 @@ SubjectProfile _subject({
   return SubjectProfile(
     bodyRatio: bodyRatio,
     faceAngleDegrees: faceAngleDegrees,
+    faceAngleXDegrees: faceAngleXDegrees,
+    faceAngleZDegrees: faceAngleZDegrees,
+    mouthOpenRatio: mouthOpenRatio,
+    eyeOpenRatio: eyeOpenRatio,
     shoulderAngleDegrees: shoulderAngleDegrees,
     eyesOpen: eyesOpen,
     expression: expression,
@@ -62,6 +70,61 @@ void main() {
       final smoothed = engine.smoothSubject(raw, previous);
       expect(smoothed.faceAngleDegrees, 15.0);
     });
+
+    // Previously dropped entirely by smoothSubject's return constructor —
+    // faceAngleXDegrees/faceAngleZDegrees/mouthOpenRatio/eyeOpenRatio were
+    // always null on the smoothed output regardless of what raw contained.
+    test('EMA-smooths faceAngleXDegrees the same way as faceAngleDegrees', () {
+      final engine = TrackingEngine(
+        thresholds: DetectionThresholds.defaultValues.copyWith(
+          debounceFrames: 1,
+        ),
+      );
+      final previous = _subject(faceAngleXDegrees: 0.0);
+      final raw = _subject(faceAngleXDegrees: 10.0);
+
+      final smoothed = engine.smoothSubject(raw, previous);
+      expect(smoothed.faceAngleXDegrees, closeTo(3.0, 1e-9));
+    });
+
+    test('EMA-smooths faceAngleZDegrees the same way as faceAngleDegrees', () {
+      final engine = TrackingEngine(
+        thresholds: DetectionThresholds.defaultValues.copyWith(
+          debounceFrames: 1,
+        ),
+      );
+      final previous = _subject(faceAngleZDegrees: 0.0);
+      final raw = _subject(faceAngleZDegrees: 10.0);
+
+      final smoothed = engine.smoothSubject(raw, previous);
+      expect(smoothed.faceAngleZDegrees, closeTo(3.0, 1e-9));
+    });
+
+    test('EMA-smooths mouthOpenRatio', () {
+      final engine = TrackingEngine(
+        thresholds: DetectionThresholds.defaultValues.copyWith(
+          debounceFrames: 1,
+        ),
+      );
+      final previous = _subject(mouthOpenRatio: 0.0);
+      final raw = _subject(mouthOpenRatio: 1.0);
+
+      final smoothed = engine.smoothSubject(raw, previous);
+      expect(smoothed.mouthOpenRatio, closeTo(0.3, 1e-9));
+    });
+
+    test('EMA-smooths eyeOpenRatio', () {
+      final engine = TrackingEngine(
+        thresholds: DetectionThresholds.defaultValues.copyWith(
+          debounceFrames: 1,
+        ),
+      );
+      final previous = _subject(eyeOpenRatio: 0.0);
+      final raw = _subject(eyeOpenRatio: 1.0);
+
+      final smoothed = engine.smoothSubject(raw, previous);
+      expect(smoothed.eyeOpenRatio, closeTo(0.3, 1e-9));
+    });
   });
 
   group('smoothSubject — debounce', () {
@@ -100,6 +163,54 @@ void main() {
 
         previous = engine.smoothSubject(_subject(expression: null), previous);
         expect(previous.expression, isNull); // now nulled out
+      },
+    );
+
+    test(
+      'nulls out mouthOpenRatio after it goes missing for debounceFrames in a row',
+      () {
+        final engine = TrackingEngine(
+          thresholds: DetectionThresholds.defaultValues.copyWith(
+            debounceFrames: 2,
+          ),
+        );
+        var previous = _subject(mouthOpenRatio: 0.5);
+
+        previous = engine.smoothSubject(
+          _subject(mouthOpenRatio: null),
+          previous,
+        );
+        expect(previous.mouthOpenRatio, 0.5); // still within grace period
+
+        previous = engine.smoothSubject(
+          _subject(mouthOpenRatio: null),
+          previous,
+        );
+        expect(previous.mouthOpenRatio, isNull); // now nulled out
+      },
+    );
+
+    test(
+      'nulls out faceAngleZDegrees after it goes missing for debounceFrames in a row',
+      () {
+        final engine = TrackingEngine(
+          thresholds: DetectionThresholds.defaultValues.copyWith(
+            debounceFrames: 2,
+          ),
+        );
+        var previous = _subject(faceAngleZDegrees: 12.0);
+
+        previous = engine.smoothSubject(
+          _subject(faceAngleZDegrees: null),
+          previous,
+        );
+        expect(previous.faceAngleZDegrees, 12.0); // still within grace period
+
+        previous = engine.smoothSubject(
+          _subject(faceAngleZDegrees: null),
+          previous,
+        );
+        expect(previous.faceAngleZDegrees, isNull); // now nulled out
       },
     );
   });

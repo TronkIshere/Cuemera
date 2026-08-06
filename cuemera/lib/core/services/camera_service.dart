@@ -27,17 +27,22 @@ class CameraService {
   double get minZoom => _minZoom;
   double get maxZoom => _maxZoom;
 
-  /// Wall-clock time the most recent [capture] spent creating+initializing
-  /// the temporary max-resolution `CameraController`, from the moment the
-  /// live stream was stopped to the moment `initialize()` returned.
+  /// Wall-clock time the most recent [capture] spent setting up a
+  /// dedicated capture controller. Always `Duration.zero` now that
+  /// [capture] reuses the already-running [_previewController] instead of
+  /// creating a separate `ResolutionPreset.max` controller per photo —
+  /// kept (rather than removed) so existing readers of this field don't
+  /// break, and to make the "no separate setup happens anymore" fact
+  /// visible in the same place the old cost used to show up.
   Duration? lastCaptureControllerSetupLatency;
 
   /// Wall-clock time the most recent [capture] spent inside
-  /// `takePicture()` itself, once the temporary controller was ready.
+  /// `takePicture()` itself.
   Duration? lastCaptureShutterLatency;
 
-  /// Wall-clock time the most recent [capture] spent disposing the
-  /// temporary controller.
+  /// Wall-clock time the most recent [capture] spent tearing down a
+  /// dedicated capture controller. Always `Duration.zero` now — see
+  /// [lastCaptureControllerSetupLatency].
   Duration? lastCaptureControllerTeardownLatency;
 
   /// Whether the most recent [capture] successfully saved to the device
@@ -77,44 +82,30 @@ class CameraService {
   }
 
   Future<String?> capture() async {
-    if (!isInitialized || _controller!.value.isTakingPicture) return null;
+    if (!isPreviewInitialized || _previewController!.value.isTakingPicture) {
+      return null;
+    }
 
-    if (_controller!.value.isStreamingImages) {
+    if (isInitialized && _controller!.value.isStreamingImages) {
       await _controller!.stopImageStream();
     }
 
-    final description = _cameras[_lensIndex];
-    final captureController = CameraController(
-      description,
-      ResolutionPreset.max,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.nv21,
-    );
+    lastCaptureControllerSetupLatency = Duration.zero;
+    lastCaptureControllerTeardownLatency = Duration.zero;
 
     String? path;
-    final setupStopwatch = Stopwatch()..start();
     try {
-      await captureController.initialize();
-      setupStopwatch.stop();
-      lastCaptureControllerSetupLatency = setupStopwatch.elapsed;
-
       final shutterStopwatch = Stopwatch()..start();
-      final file = await captureController.takePicture();
+      final file = await _previewController!.takePicture();
       shutterStopwatch.stop();
       lastCaptureShutterLatency = shutterStopwatch.elapsed;
 
       path = file.path;
     } finally {
-      final teardownStopwatch = Stopwatch()..start();
-      await captureController.dispose();
-      teardownStopwatch.stop();
-      lastCaptureControllerTeardownLatency = teardownStopwatch.elapsed;
-
       debugPrint(
         '[CameraService] capture() latency — '
-        'setup: ${lastCaptureControllerSetupLatency?.inMilliseconds}ms, '
-        'shutter: ${lastCaptureShutterLatency?.inMilliseconds}ms, '
-        'teardown: ${lastCaptureControllerTeardownLatency?.inMilliseconds}ms',
+        'shutter: ${lastCaptureShutterLatency?.inMilliseconds}ms '
+        '(reusing preview controller — no separate setup/teardown)',
       );
     }
 
