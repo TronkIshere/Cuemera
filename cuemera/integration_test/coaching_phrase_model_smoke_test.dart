@@ -1,31 +1,16 @@
 // integration_test/coaching_phrase_model_smoke_test.dart
 //
-// Run on a physical device with network access — this cannot run as a
-// pure-Dart `flutter test`, the same way `reference_image_analyzer.dart`'s
-// `analyze()` can't (see APPENDIX.md): it drives a real native model
-// through flutter_gemma/MediaPipe, no fake-able seam exists.
-//
 //   flutter test integration_test/coaching_phrase_model_smoke_test.dart \
-//     --dart-define=HF_TOKEN=<your Hugging Face token> \
-//     -d <device-id>
-//
-// First run downloads ~304MB (needs the Gemma 3 270M license accepted on
-// the token's HF account — see PHASE1_MODEL_INTEGRATION_PLAN.md). Prints
-// each generated phrase and its latency so Phase 3 has real numbers
-// against the existing 80ms/frame throttle budget, instead of an assumed
-// one.
+//     --dart-define=HF_TOKEN=<token> -d <device-id>
 import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
 import 'package:cuemera/features/voice_director/services/coaching_phrase_model_service.dart';
-import 'package:flutter_gemma/flutter_gemma.dart' show DownloadException;
+import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  // One decision per attribute family, deliberately spanning direction and
-  // severity band so a spot-check covers the range Phase 3 will need,
-  // not just the happy path.
   final sampleDecisions = <String, CoachingDecision>{
     'shoulder angle, decrease, mild': const CoachingDecision(
       attribute: CoachingAttribute.shoulderAngle,
@@ -85,10 +70,6 @@ void main() {
         onProgress: (percent) => print('Download progress: $percent%'),
       );
     } on DownloadException catch (e) {
-      // Most common failure here is a 403 — the token's HF account hasn't
-      // accepted the Gemma license on the model page yet (a "Request
-      // Access" click, not a code fix). e.error.toUserMessage() names
-      // exactly which case this is.
       fail('Model install failed: ${e.error.toUserMessage()}');
     }
     installStopwatch.stop();
@@ -102,13 +83,9 @@ void main() {
 
       print(
         '[${entry.key}] '
-        '(${stopwatch.elapsedMilliseconds}ms) -> ${phrase ?? "(null — check for a bug, not an expected outcome here)"}',
+        '(${stopwatch.elapsedMilliseconds}ms) -> ${phrase ?? "null"}',
       );
 
-      // Not a strict content assertion — the point of this smoke test is
-      // human review of real generated text/latency, not pinning exact
-      // wording. Only assert the contract generate() promises: never
-      // throws, and returns non-empty text when the model is ready.
       expect(phrase, isNotNull);
       expect(phrase, isNotEmpty);
     }

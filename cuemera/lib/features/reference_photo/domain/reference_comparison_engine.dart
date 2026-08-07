@@ -1,5 +1,6 @@
 // features/voice_director/domain/reference_comparison_engine.dart
 import 'package:cuemera/features/voice_director/domain/priority_engine.dart';
+import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
 
 import '../../reference_photo/domain/comparison_math.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
@@ -8,8 +9,14 @@ import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
 
 class ReferenceComparisonEngine {
-  static const double _mildSeverityCeiling = 0.4;
-  static const double _moderateSeverityCeiling = 0.75;
+  // Severity-band boundaries live on CoachingDecision now (single source of
+  // truth shared between the tiered-phrase text and CoachingDecision's own
+  // severityBand/dedupeKey) — kept as local aliases here so the existing
+  // _tieredPhrase call sites below don't all need to change.
+  static const double _mildSeverityCeiling =
+      CoachingDecision.mildSeverityCeiling;
+  static const double _moderateSeverityCeiling =
+      CoachingDecision.moderateSeverityCeiling;
   static const bool _faceRollDirectionIsMirrored = false;
 
   String _tieredPhrase(
@@ -36,6 +43,7 @@ class ReferenceComparisonEngine {
       phrase: worst.phrase,
       severity: worst.severity,
       sourceLayer: 'reference_comparison_engine',
+      decision: worst.decision,
     );
   }
 
@@ -149,9 +157,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.shoulderAngle,
+        direction: subjectValue > referenceValue
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -194,9 +209,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.facePitch,
+        direction: subjectValue > referenceValue
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -243,9 +265,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.faceRoll,
+        direction: subjectTiltedMoreTowardRight
+            ? CoachingDirection.right
+            : CoachingDirection.left,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -285,9 +314,14 @@ class ReferenceComparisonEngine {
     );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.bodyRatio,
+        direction: CoachingDirection.none, // single-direction by design
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -335,9 +369,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.mouthOpen,
+        direction: subjectValue > referenceValue
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -385,9 +426,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.eyeOpen,
+        direction: subjectValue > referenceValue
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -414,9 +462,15 @@ class ReferenceComparisonEngine {
         "Try a more '$referenceValue' expression, like the reference";
 
     return _AttributeEvaluation(
-      severity: (deviation * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.expression,
+        direction: CoachingDirection.none,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: deviation,
+        fallbackPhrase: phrase,
+        targetExpression: referenceValue,
+      ),
     );
   }
 
@@ -459,9 +513,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.negativeSpace,
+        direction: subjectValue > referenceValue
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.composition,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -496,9 +557,14 @@ class ReferenceComparisonEngine {
     );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.symmetry,
+        direction: CoachingDirection.none, // single-direction by design
+        tier: CoachingTier.composition,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -541,9 +607,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.brightness,
+        direction: subjectValue > referenceValue
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.lighting,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -591,9 +664,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.backgroundClutter,
+        direction: subjectValue > normalizedReferenceValue
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.composition,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -636,9 +716,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.warmth,
+        direction: subjectValue < referenceValue
+            ? CoachingDirection.increase
+            : CoachingDirection.decrease,
+        tier: CoachingTier.lighting,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -677,21 +764,29 @@ class ReferenceComparisonEngine {
     );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.hue,
+        direction: CoachingDirection.none, // single-direction by design
+        tier: CoachingTier.lighting,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 }
 
 class _AttributeEvaluation {
   const _AttributeEvaluation({
-    required this.severity,
     required this.deviationExceedsThreshold,
-    required this.phrase,
+    required this.decision,
   });
 
-  final int severity;
   final bool deviationExceedsThreshold;
-  final String phrase;
+  final CoachingDecision decision;
+
+  // Derived rather than stored separately, so severity/phrase can never
+  // drift out of sync with the decision they came from.
+  int get severity => (decision.normalizedSeverity * 10).round();
+  String get phrase => decision.fallbackPhrase;
 }

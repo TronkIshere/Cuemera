@@ -14,15 +14,49 @@ All P0 and P1 items are resolved. What remains is grouped below by what it needs
 
 ## 3. Model-driven upgrade — the core "complete product" gap
 
-**In progress — see `SIGNAL_DISABLE_AND_AI_INTEGRATION_PLAN.md` for current status.**
-The direction below (on-device GenAI generating the coaching phrase, rule-based
-`ComparisonMath` attribute/severity selection kept underneath, phrase bank
-retained as the fallback) was chosen — the specific route settled on is
-Gemma 3 270M via `flutter_gemma`, not the Gemini Nano/Foundation Models path
-this section originally sketched. Phase 0 (decouple decision from phrase)
-and Phase 1 (isolated model integration) are done; Phase 1's device smoke
-test, Phase 2 (wire into the live path), and Phase 3 (measure and tune)
-are still open — full detail in the plan doc rather than duplicated here.
+**In progress.** The direction below (on-device GenAI generating the
+coaching phrase, rule-based `ComparisonMath` attribute/severity selection
+kept underneath, phrase bank retained as the fallback) was chosen — the
+specific route settled on is Gemma 3 270M via `flutter_gemma`, not the
+Gemini Nano/Foundation Models path this section originally sketched.
+
+Decoupling the decision from the phrase text (`CoachingDecision`) and
+wiring the model into the live coaching path (`voiceDirectorListenerProvider`,
+with a 3-second timeout and fallback to `decision.fallbackPhrase` on
+failure) are both code-complete. **None of it is active yet** — nothing
+in the app calls `CoachingPhraseModelService.ensureInstalled()`, so
+`phraseModel.isReady` is always `false` and every decision still
+resolves to `decision.fallbackPhrase`, byte-for-byte identical to before
+this work started. `voice_providers.dart` logs every generation attempt
+via `debugPrint` (latency, attribute, success/fail — mirrors
+`CameraService.capture()`'s existing instrumentation), but there's no
+real data yet since nothing has triggered a real attempt.
+
+**Model/bundling decisions already made:** `litert-community/gemma-3-270m-it`'s
+`gemma3-270m-it-q8.task` mobile build (int8, ~304MB, gated on Hugging
+Face), downloaded on-demand (`.fromNetwork`) rather than bundled in app
+assets, token sourced via build-time `--dart-define=HF_TOKEN=...`. Files:
+`coaching_decision.dart`, `coaching_phrase_model_service.dart`,
+`coaching_phrase_model_providers.dart`,
+`integration_test/coaching_phrase_model_smoke_test.dart`. `pubspec.yaml`
+updated (`flutter_gemma`, `flutter_gemma_mediapipe`, `integration_test`,
+`environment.sdk` bumped to `^3.12.0` — needs an actual `flutter upgrade`,
+not just the pubspec edit).
+
+**Open items, in the order they unblock each other:**
+1. Run the smoke test on a physical device with network access and an
+   HF token that's accepted the Gemma license:
+   ```
+   flutter test integration_test/coaching_phrase_model_smoke_test.dart \
+     --dart-define=HF_TOKEN=<token> -d <device-id>
+   ```
+2. Decide where `ensureInstalled()` gets triggered from (a settings
+   toggle, automatic on first reference-photo pick, etc.) and build it —
+   this is what actually turns the model on.
+3. Once both of the above are done and the app's been used for real:
+   latency against the existing 80ms/frame throttle budget, a
+   phrase-quality/naturalness pass, and whether `gemma-3-270m-it-q8` is
+   the right size/quantization — all from real numbers, not assumption.
 
 Two items from this section remain untouched and still open:
 - **Fold the unified expression classifier (`expression_classifier.dart`) into that same modeling effort**, rather than continuing to hand-tune its probability thresholds. (Currently gated off the live path entirely by Track 1's signal-disable flag, which further reduces urgency here for now.)
