@@ -105,48 +105,63 @@ void main() {
     });
   });
 
-  group('analyzeFace — eyesOpen', () {
-    test('is true only when both eyes are open above 0.5', () {
-      final result = analyzer.analyzeFace([
-        _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: 0.8),
-      ], _previous());
-      expect(result.eyesOpen, isTrue);
-    });
+  group(
+    'analyzeFace — eyesOpen (disabled via enableEyeAndExpressionSignals)',
+    () {
+      // FaceAnalyzer.enableEyeAndExpressionSignals is currently false, so
+      // eyesOpen is always null regardless of the underlying eye-open
+      // probabilities. These cases previously asserted true/false directly
+      // from the probabilities; they now confirm the flag actually
+      // suppresses the value in both directions, rather than just
+      // happening to test a case that stayed null anyway.
+      test('is null even when both eyes are clearly open above 0.5', () {
+        final result = analyzer.analyzeFace([
+          _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: 0.8),
+        ], _previous());
+        expect(result.eyesOpen, isNull);
+      });
 
-    test('is false when either eye is at or below 0.5', () {
-      final result = analyzer.analyzeFace([
-        _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: 0.4),
-      ], _previous());
-      expect(result.eyesOpen, isFalse);
-    });
+      test('is null even when an eye is clearly at or below 0.5', () {
+        final result = analyzer.analyzeFace([
+          _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: 0.4),
+        ], _previous());
+        expect(result.eyesOpen, isNull);
+      });
 
-    test('is null when either probability is missing', () {
-      final result = analyzer.analyzeFace([
-        _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: null),
-      ], _previous());
-      expect(result.eyesOpen, isNull);
-    });
-  });
+      test('is null when either probability is missing', () {
+        final result = analyzer.analyzeFace([
+          _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: null),
+        ], _previous());
+        expect(result.eyesOpen, isNull);
+      });
+    },
+  );
 
-  group('analyzeFace — expression delegates to classifyExpression', () {
-    test('big_smile when smiling probability is high and eyes are open', () {
-      final result = analyzer.analyzeFace([
-        _face(
-          smilingProbability: 0.95,
-          leftEyeOpenProbability: 0.9,
-          rightEyeOpenProbability: 0.9,
-        ),
-      ], _previous());
-      expect(result.expression, 'big_smile');
-    });
+  group(
+    'analyzeFace — expression (disabled via enableEyeAndExpressionSignals)',
+    () {
+      // Same as above: classifyExpression is still called internally (not
+      // deleted), but its result is discarded before being written to the
+      // output profile while the flag is off.
+      test('is null even when classifyExpression would return big_smile', () {
+        final result = analyzer.analyzeFace([
+          _face(
+            smilingProbability: 0.95,
+            leftEyeOpenProbability: 0.9,
+            rightEyeOpenProbability: 0.9,
+          ),
+        ], _previous());
+        expect(result.expression, isNull);
+      });
 
-    test('null expression when smilingProbability itself is null', () {
-      final result = analyzer.analyzeFace([
-        _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: 0.9),
-      ], _previous());
-      expect(result.expression, isNull);
-    });
-  });
+      test('null expression when smilingProbability itself is null', () {
+        final result = analyzer.analyzeFace([
+          _face(leftEyeOpenProbability: 0.9, rightEyeOpenProbability: 0.9),
+        ], _previous());
+        expect(result.expression, isNull);
+      });
+    },
+  );
 
   group('analyzeFace — mouthOpenRatio from lip contours', () {
     test('computes a ratio when all four lip contours are present', () {

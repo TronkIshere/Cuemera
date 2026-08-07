@@ -241,6 +241,17 @@ int _expressionScore(
     return expression;
   }
 
+  if (subject.expression == null) {
+    // The reference has a target expression, but the subject side has no
+    // expression signal (expected to be the permanent case now that
+    // FaceAnalyzer.enableEyeAndExpressionSignals is off). Falling through
+    // to the match check below would silently score this as a maximal
+    // mismatch on every single frame — not an intentional judgment, just
+    // an artifact of `null == refExpression` always being false. Use the
+    // same neutral 60 used for the "no signal at all" case above instead.
+    return 60;
+  }
+
   final matches = subject.expression == refExpression;
   final deviation = matches ? 0.0 : 1.0;
   final thresholdForExpression = ComparisonMath.thresholdForExpression(

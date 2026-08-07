@@ -35,7 +35,7 @@ final onFrameCallbackProvider =
 /// quiet, instead of the app just silently doing nothing.
 final mlKitUnavailableProvider = StateProvider<bool>((ref) => false);
 
-final mlKitAvailabilityListenerProvider = Provider<void>((ref) {
+final mlKitAvailabilityListenerProvider = Provider.autoDispose<void>((ref) {
   final mlKitService = ref.watch(mlKitServiceProvider);
 
   final subscription = mlKitService.unavailableStream.listen((unavailable) {
@@ -106,7 +106,7 @@ final trackingProgressProvider = Provider<double>((ref) {
   );
 });
 
-final sceneAnalysisListenerProvider = Provider<void>((ref) {
+final sceneAnalysisListenerProvider = Provider.autoDispose<void>((ref) {
   final mlKitService = ref.watch(mlKitServiceProvider);
   final poseAnalyzer = ref.watch(poseAnalyzerProvider);
   final faceAnalyzer = ref.watch(faceAnalyzerProvider);

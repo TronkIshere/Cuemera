@@ -4,8 +4,6 @@ All P0 and P1 items are resolved. What remains is grouped below by what it needs
 
 ## 1. Needs physical-device testing
 
-- **`LightAnalyzer._estimateColorTone`'s `planes[1]=U, planes[2]=V` assumption is unverified.** Instrumentation is in place: flip `debugLogColorToneSamples` to `true`, point the camera at a known pure-red target then a known pure-blue target, and compare the logged `avgU`/`avgV`/`hue`/`warmth` against the expected YUV values noted in the doc-comment above the flag. If the values are swapped or don't move as expected, `_estimateColorTone` needs fixing for this device/format.
-- **`CameraService.capture()`'s per-photo controller lifecycle needs a redesign decision.** It currently spins up a brand-new `ResolutionPreset.max` `CameraController` for every single photo (on top of the two already-running controllers), then disposes it. Latency is instrumented (`lastCaptureControllerSetupLatency`/`lastCaptureShutterLatency`/`lastCaptureControllerTeardownLatency`, logged via `debugPrint` on every capture) — pull real numbers from a device, then decide whether reusing an existing controller (trading off capture resolution) is worth it.
 - **Measure the real wall-clock impact of `ReferenceImageAnalyzer.analyze()`'s concurrency.** Its five independent steps (pose, face, segmentation, decode, palette) now run via `Future.wait` instead of sequentially. Confirm on a physical device that this actually cuts latency — ML Kit's native platform-channel bindings may serialize these calls internally regardless of Dart-level concurrency, in which case the real-world win could be smaller than assumed.
 - **Verify `_evaluateFaceRoll`'s left/right direction in `reference_comparison_engine.dart`.** The phrase direction is derived from ML Kit's documented `headEulerAngleZ` sign convention, gated behind a `_faceRollDirectionIsMirrored` flag (currently `false`). This hasn't been confirmed on a physical device — tilt your head to a known side and check which phrase fires; flip the flag if it's backward. Now that the `subject_profile.dart`/`tracking_engine.dart` fix means this evaluator actually runs in production, getting the direction right matters more than when it was previously dead code.
 
@@ -19,14 +17,16 @@ All P0 and P1 items are resolved. What remains is grouped below by what it needs
 
 ## 4. Model-driven upgrade — the core "complete product" gap
 
-The voice-coaching layer is still rule-based: `ReferenceComparisonEngine`'s `_evaluate*` methods pick from severity-tiered phrase banks (mild/moderate/strong) by threshold/sign logic — hand-authored strings, not a learned model. `score_calculator.dart`'s no-reference expression fallback is a literal if/else ladder. There is no LLM, no fine-tuned classifier, and no prompt/response pipeline anywhere in the codebase.
+**In progress — see `SIGNAL_DISABLE_AND_AI_INTEGRATION_PLAN.md` for current status.**
+The direction below (on-device GenAI generating the coaching phrase, rule-based
+`ComparisonMath` attribute/severity selection kept underneath, phrase bank
+retained as the fallback) was chosen — the specific route settled on is
+Gemma 3 270M via `flutter_gemma`, not the Gemini Nano/Foundation Models path
+this section originally sketched. Phase 0 (decouple decision from phrase)
+and Phase 1 (isolated model integration) are done; Phase 1's device smoke
+test, Phase 2 (wire into the live path), and Phase 3 (measure and tune)
+are still open — full detail in the plan doc rather than duplicated here.
 
-- **Replace the phrase bank with an on-device GenAI call** — Gemini Nano via ML Kit's GenAI Prompt API on Android, Apple's Foundation Models framework on iOS (now accepts multimodal image input) — that takes the structured deviation summary and generates the coaching phrase in natural language. Keep `ComparisonMath`'s attribute/severity selection as the reliable rule-based layer underneath, and keep the current phrase bank as the fallback for unsupported devices/regions (both platforms have real availability limits: device/AICore requirements on Android, regional restrictions and hardware requirements on iOS). Requires native Kotlin/Swift integration work beyond pure Dart.
-- **Fold the unified expression classifier (`expression_classifier.dart`) into that same modeling effort**, rather than continuing to hand-tune its probability thresholds.
+Two items from this section remain untouched and still open:
+- **Fold the unified expression classifier (`expression_classifier.dart`) into that same modeling effort**, rather than continuing to hand-tune its probability thresholds. (Currently gated off the live path entirely by Track 1's signal-disable flag, which further reduces urgency here for now.)
 - **Scope a Quality Engine** — aesthetic scoring beyond `ComparisonMath`'s geometric comparison. No ready-made on-device model exists for this; the realistic path is a NIMA-style small CNN (MobileNet/Inception backbone) fine-tuned and exported to LiteRT. Needs a labeled dataset first — bootstrap from a public aesthetic-scoring dataset, then fine-tune on real app data — before any model work starts.
-
-For the model-driven items, a rough sense of what's needed before starting:
-- *Data:* paired (live-frame features, reference-photo features, human-rated "what should the coach say / how close is this") examples — either a labeling pass over recorded sessions, or synthetic weak labels bootstrapped from `ComparisonMath`'s existing deviation math.
-- *Model directions:* (a) a small classifier/ranker over the existing numeric feature vector to pick which attribute to correct and how urgently, or (b) the on-device GenAI call described above for natural-language phrase generation.
-- *Evaluation:* human-rated coaching-phrase quality on held-out sessions; agreement rate between the model's "worst attribute" pick and a human's; expression-classification accuracy against a labeled validation set.
-- *Deployment:* on-device (Gemini Nano / Foundation Models) fits the live coaching path best, given the existing 80 ms per-frame throttle; a hosted API call is more plausible for the one-shot reference-photo analysis, where the latency budget is looser.

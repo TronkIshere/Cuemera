@@ -58,17 +58,23 @@ void main() {
   });
 
   group('shouldCapture — basic gates', () {
-    test('fails when eyes are not open', () {
+    // eyesOpen no longer gates capture: FaceAnalyzer.enableEyeAndExpressionSignals
+    // is off, so eyesOpen is permanently null in production, and this gate
+    // would have silently blocked every capture forever if left in place.
+    // `_alignedSubject(eyesOpen: false)` is still exercised elsewhere to
+    // confirm the value genuinely has no effect (see 'is unaffected by
+    // eyesOpen' below); there's no longer a case where it should fail.
+    test('is unaffected by eyesOpen — passes even when eyesOpen is false', () {
       final service = AutoCaptureService();
       final result = service.shouldCapture(
         _alignedSubject(eyesOpen: false),
         _scene(),
-        _reference(),
+        _reference(backgroundClutterCount: 0),
         _tolerance,
         1.0,
         _thresholds,
       );
-      expect(result, isFalse);
+      expect(result, isTrue);
     });
 
     test('fails when brightness is below the minimum threshold', () {
@@ -237,9 +243,11 @@ void main() {
           _thresholds,
         );
 
-        expect(breakdown['eyesOpen'], isFalse);
-        // every other gate should still report its own true/false independent
-        // of the eyesOpen failure, unlike shouldCapture's early return.
+        // No 'eyesOpen' key: it's no longer part of the capture decision,
+        // so debugConditionBreakdown no longer reports it (see
+        // auto_capture_service.dart).
+        expect(breakdown.containsKey('eyesOpen'), isFalse);
+        // every other gate should still report its own true/false.
         expect(breakdown.containsKey('trackingProgress'), isTrue);
         expect(breakdown.containsKey('backgroundClutter'), isTrue);
       },

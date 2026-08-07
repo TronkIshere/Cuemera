@@ -131,12 +131,19 @@ class ReferenceImageAnalyzer {
     double? symmetryScore;
     int? backgroundClutterCount;
     if (mask != null) {
-      negativeSpaceScore = estimateNegativeSpace(mask);
-      symmetryScore = estimateSymmetry(mask, poseResult.shoulderAngleDegrees);
+      negativeSpaceScore = estimateNegativeSpace(mask.confidences);
+      symmetryScore = estimateSymmetry(
+        width: mask.width,
+        height: mask.height,
+        confidences: mask.confidences,
+        shoulderAngleDegrees: poseResult.shoulderAngleDegrees,
+      );
       if (decodedResult.decoded != null) {
         backgroundClutterCount = estimateBackgroundClutter(
           decodedResult.decoded!,
-          mask,
+          maskWidth: mask.width,
+          maskHeight: mask.height,
+          confidences: mask.confidences,
         );
       }
     }
@@ -478,12 +485,13 @@ class ReferenceImageAnalyzer {
   }
 
   /// Public + [visibleForTesting] so it can be unit-tested directly with a
-  /// hand-built [SegmentationMask] instead of requiring a real on-device
-  /// segmentation pass. Behavior is unchanged from the former `_`-prefixed
-  /// version; this is a visibility-only change.
+  /// plain confidences list instead of requiring a real on-device
+  /// segmentation pass (or a hand-built `SegmentationMask`, which has no
+  /// confirmed public constructor). Behavior is unchanged from the former
+  /// `_`-prefixed, `SegmentationMask`-typed version — this is a signature
+  /// change for testability only.
   @visibleForTesting
-  double? estimateNegativeSpace(SegmentationMask mask) {
-    final confidences = mask.confidences;
+  double? estimateNegativeSpace(List<double> confidences) {
     if (confidences.isEmpty) return null;
 
     int subjectPixels = 0;
@@ -499,18 +507,17 @@ class ReferenceImageAnalyzer {
   }
 
   @visibleForTesting
-  double? estimateSymmetry(
-    SegmentationMask mask,
-    double? shoulderAngleDegrees,
-  ) {
+  double? estimateSymmetry({
+    required int width,
+    required int height,
+    required List<double> confidences,
+    required double? shoulderAngleDegrees,
+  }) {
     if (shoulderAngleDegrees != null) {
       final angle = shoulderAngleDegrees.abs();
       return (1.0 - (angle / 45.0)).clamp(0.0, 1.0);
     }
 
-    final confidences = mask.confidences;
-    final width = mask.width;
-    final height = mask.height;
     if (confidences.isEmpty || width <= 0 || height <= 0) return null;
 
     int leftSubject = 0;
@@ -539,12 +546,14 @@ class ReferenceImageAnalyzer {
   }
 
   @visibleForTesting
-  int? estimateBackgroundClutter(img.Image decoded, SegmentationMask mask) {
+  int? estimateBackgroundClutter(
+    img.Image decoded, {
+    required int maskWidth,
+    required int maskHeight,
+    required List<double> confidences,
+  }) {
     final width = decoded.width;
     final height = decoded.height;
-    final confidences = mask.confidences;
-    final maskWidth = mask.width;
-    final maskHeight = mask.height;
     if (width <= 0 || height <= 0 || confidences.isEmpty) return null;
 
     const stepX = 6;

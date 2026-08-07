@@ -27,6 +27,13 @@ dependencies:
   palette_generator: ^0.3.3+3
   image_picker: ^1.1.2
   flutter_launcher_icons: ^0.14.1
+  # Track 2, Phase 1 — Gemma 3 270M for coaching phrase generation.
+  # 1.0+ split into a small core plus opt-in engine packages: core alone
+  # registers no engine, so flutter_gemma_mediapipe (the .task/MediaPipe
+  # engine) is required alongside it, not optional. See
+  # coaching_phrase_model_service.dart's _ensurePluginInitialized().
+  flutter_gemma: ^1.5.2
+  flutter_gemma_mediapipe: ^1.0.0
 
 assets:
   - assets/images/
@@ -40,6 +47,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  integration_test:
+    sdk: flutter
 
 flutter:
   uses-material-design: true

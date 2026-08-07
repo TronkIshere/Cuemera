@@ -200,6 +200,25 @@ void main() {
         expect(result.breakdown['expression'], 90);
       },
     );
+
+    // New: covers the permanent case introduced by disabling the subject-
+    // side expression signal (FaceAnalyzer.enableEyeAndExpressionSignals =
+    // false) while the reference photo still has a target expression.
+    // Asserted by value, not just "doesn't crash" — must be the same
+    // neutral 60 used when neither side has a signal, not an accidental
+    // always-mismatch score.
+    test(
+      'falls back to neutral 60 when the subject has no expression but the reference does',
+      () {
+        final result = calculateReferenceScore(
+          _subject(expression: null),
+          _scene(),
+          _reference(expression: 'smiling'),
+          ToleranceSettings.defaultBalanced,
+        );
+        expect(result.breakdown['expression'], 60);
+      },
+    );
   });
 
   group('EditorialScore persistence round-trip', () {

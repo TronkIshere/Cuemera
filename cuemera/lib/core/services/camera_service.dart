@@ -131,6 +131,20 @@ class CameraService {
     return path;
   }
 
+  Future<void> pauseCameras() async {
+    await stopImageStream();
+    await _controller?.dispose();
+    _controller = null;
+    await _previewController?.dispose();
+    _previewController = null;
+  }
+
+  Future<void> resumeCameras() async {
+    if (_cameras.isEmpty) return;
+    await _createController(_cameras[_lensIndex]);
+    await initPreviewController();
+  }
+
   Future<void> switchLens() async {
     if (_cameras.length < 2) return;
     _lensIndex = (_lensIndex + 1) % _cameras.length;

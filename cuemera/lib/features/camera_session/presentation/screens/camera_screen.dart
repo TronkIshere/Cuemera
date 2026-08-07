@@ -55,8 +55,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   SegmentationMask? _latestMask;
   StreamSubscription<MlKitAnalysisResult>? _mlKitSubscription;
 
-  bool _wasStreamingBeforePause = false;
-
   double _baseZoom = 1.0;
   double _currentZoom = 1.0;
   Offset? _focusPoint;
@@ -79,6 +77,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       _state = _CameraInitState.loading;
       _errorMessage = null;
     });
+
+    _mlKitSubscription?.cancel();
+    _mlKitSubscription = null;
 
     try {
       final cameraService = ref.read(cameraServiceProvider);
@@ -312,21 +313,17 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted) return;
     if (_state != _CameraInitState.ready) return;
-    final cameraService = ref.read(cameraServiceProvider);
 
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-        _wasStreamingBeforePause =
-            cameraService.controller?.value.isStreamingImages ?? false;
-        cameraService.stopImageStream();
+        _mlKitSubscription?.cancel();
+        _mlKitSubscription = null;
+        ref.read(cameraServiceProvider).pauseCameras();
         break;
       case AppLifecycleState.resumed:
-        if (mounted && _wasStreamingBeforePause) {
-          cameraService.startImageStream(_onFrame);
-        }
+        _initCamera();
         break;
       default:
         break;

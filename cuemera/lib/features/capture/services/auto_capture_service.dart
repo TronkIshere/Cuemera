@@ -17,7 +17,10 @@ class AutoCaptureService {
     double trackingProgress,
     DetectionThresholds thresholds,
   ) {
-    if (subject.eyesOpen != true) return false;
+    // `eyesOpen` is currently disabled upstream (FaceAnalyzer always
+    // produces null for it), so this is intentionally no longer a gate —
+    // previously `subject.eyesOpen != true` would have permanently blocked
+    // every capture once the signal went permanently null.
     if (scene.brightness < thresholds.minBrightnessForCapture) return false;
 
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
@@ -63,8 +66,10 @@ class AutoCaptureService {
         DateTime.now().difference(_lastCapture!).inMilliseconds >=
             thresholds.captureCooldownMs;
 
+    // No 'eyesOpen' key: it's no longer part of the capture decision (see
+    // shouldCapture), so reporting it here — as always-passing or
+    // otherwise — would be misleading debug output.
     return {
-      'eyesOpen': subject.eyesOpen == true,
       'brightness': scene.brightness >= thresholds.minBrightnessForCapture,
       'shoulderAngle': shoulderOk,
       'faceAngle': faceOk,

@@ -397,5 +397,44 @@ void main() {
 
       expect(progress, inInclusiveRange(0.0, 1.0));
     });
+
+    // New: covers the Track 1 signal-disable change. With
+    // FaceAnalyzer.enableEyeAndExpressionSignals off, eyesOpen/expression
+    // are permanently null on both sides. trackingProgress already guards
+    // both attributes on "both sides non-null" before adding them to the
+    // weighted average, so a permanently-null pair should simply drop out
+    // of the average rather than being treated as an always-failing match
+    // (which would suppress progress below the auto-capture threshold
+    // forever). No production code change was needed for this — this test
+    // exists to lock in that the existing null-guard already covers the
+    // permanent case, not just a transient one.
+    test(
+      'is not suppressed when eyesOpen and expression are permanently null on both sides',
+      () {
+        final engine = TrackingEngine();
+        final subject = _subject(
+          shoulderAngleDegrees: 0.0,
+          faceAngleDegrees: 0.0,
+          bodyRatio: 1.0,
+          eyesOpen: null,
+          expression: null,
+        );
+        final scene = _scene(brightness: 0.5, backgroundClutterCount: 2);
+
+        final progress = engine.trackingProgress(
+          subject,
+          subject,
+          scene,
+          scene,
+          ToleranceSettings.defaultBalanced,
+        );
+
+        expect(progress, inInclusiveRange(0.0, 1.0));
+        // Every other tracked attribute still matches exactly, so dropping
+        // eyesOpen/expression from the average should still land at 1.0 —
+        // not artificially lowered by treating the missing pair as a miss.
+        expect(progress, closeTo(1.0, 1e-9));
+      },
+    );
   });
 }

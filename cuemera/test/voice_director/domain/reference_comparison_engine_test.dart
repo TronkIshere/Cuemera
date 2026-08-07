@@ -5,6 +5,7 @@ import 'package:cuemera/features/scene_analysis/domain/models/scene_profile.dart
 import 'package:cuemera/features/scene_analysis/domain/models/subject_profile.dart';
 import 'package:cuemera/features/voice_director/domain/priority_engine.dart';
 import 'package:cuemera/features/voice_director/domain/reference_comparison_engine.dart';
+import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 SubjectProfile _subject({
@@ -281,9 +282,13 @@ void main() {
 
   group('evaluate — facePitch (previously dead-code path)', () {
     test('mild pitch deviation gets a directional chin-down phrase', () {
-      // deviation = 20, normalizedSeverity = 20/90 = 0.22 (mild)
+      // deviation = 30, normalizedSeverity = 30/90 = 0.33 (mild).
+      // (20° was tried first but doesn't clear the 22.5° pose threshold —
+      // exceedsThreshold requires deviation > threshold, so that deviation
+      // never fires at all. 30 mirrors the existing shoulder-angle mild
+      // test, which is deliberately in the same mild band.)
       final result = engine.evaluate(
-        subject: _subject(faceAngleXDegrees: 20.0),
+        subject: _subject(faceAngleXDegrees: 30.0),
         scene: _scene(),
         reference: _reference(faceAngleXDegrees: 0.0),
         tolerance: tolerance,
@@ -296,7 +301,7 @@ void main() {
       final result = engine.evaluate(
         subject: _subject(faceAngleXDegrees: 0.0),
         scene: _scene(),
-        reference: _reference(faceAngleXDegrees: 20.0),
+        reference: _reference(faceAngleXDegrees: 30.0),
         tolerance: tolerance,
       );
 
@@ -505,5 +510,217 @@ void main() {
       expect(result, isA<PriorityAction>());
       expect(result!.sourceLayer, 'reference_comparison_engine');
     });
+  });
+
+  // New (Track 2, Phase 0): covers CoachingDecision's fields directly,
+  // rather than only asserting against the rendered phrase text. Phrase
+  // text is still asserted elsewhere in this file — these cases exist so
+  // a future phrase-generation step (Phase 2) has fields it can build from
+  // that are actually under test, independent of the current phrase bank.
+  group('evaluate — CoachingDecision fields', () {
+    test(
+      'shoulder angle: subject ahead of reference decodes to decrease/poseAndFace',
+      () {
+        final result = engine.evaluate(
+          subject: _subject(shoulderAngleDegrees: 50.0),
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+
+        final decision = result!.decision;
+        expect(decision.attribute, CoachingAttribute.shoulderAngle);
+        expect(decision.direction, CoachingDirection.decrease);
+        expect(decision.tier, CoachingTier.poseAndFace);
+        expect(decision.normalizedSeverity, closeTo(50 / 90, 1e-9));
+        expect(decision.fallbackPhrase, result.phrase);
+        expect(decision.targetExpression, isNull);
+      },
+    );
+
+    test('shoulder angle: subject behind reference decodes to increase', () {
+      final result = engine.evaluate(
+        subject: _subject(shoulderAngleDegrees: 0.0),
+        scene: _scene(),
+        reference: _reference(shoulderAngleDegrees: 50.0),
+        tolerance: tolerance,
+      );
+
+      expect(result!.decision.direction, CoachingDirection.increase);
+    });
+
+    test('face roll: direction is left or right, never increase/decrease', () {
+      final tiltedRight = engine.evaluate(
+        subject: _subject(faceAngleZDegrees: 50.0),
+        scene: _scene(),
+        reference: _reference(faceAngleZDegrees: 0.0),
+        tolerance: tolerance,
+      );
+      final tiltedLeft = engine.evaluate(
+        subject: _subject(faceAngleZDegrees: 0.0),
+        scene: _scene(),
+        reference: _reference(faceAngleZDegrees: 50.0),
+        tolerance: tolerance,
+      );
+
+      expect(tiltedRight!.decision.direction, CoachingDirection.right);
+      expect(tiltedLeft!.decision.direction, CoachingDirection.left);
+    });
+
+    test('expression: sets targetExpression and reports direction none', () {
+      final result = engine.evaluate(
+        subject: _subject(expression: 'serious'),
+        scene: _scene(),
+        reference: _reference(expression: 'smiling'),
+        tolerance: tolerance,
+      );
+
+      final decision = result!.decision;
+      expect(decision.attribute, CoachingAttribute.expression);
+      expect(decision.direction, CoachingDirection.none);
+      expect(decision.targetExpression, 'smiling');
+      expect(decision.tier, CoachingTier.poseAndFace);
+    });
+
+    test(
+      'single-direction attributes (bodyRatio, symmetry, hue) always report direction none',
+      () {
+        final bodyRatioResult = engine.evaluate(
+          subject: _subject(bodyRatio: 1.5),
+          scene: _scene(),
+          reference: _reference(bodyRatio: 1.0),
+          tolerance: tolerance,
+        );
+        final symmetryResult = engine.evaluate(
+          subject: _subject(),
+          scene: _scene(symmetryScore: 0.3),
+          reference: _reference(symmetryScore: 0.9),
+          tolerance: tolerance,
+        );
+        final hueResult = engine.evaluate(
+          subject: _subject(),
+          scene: _scene(liveDominantHue: 0.0),
+          reference: _reference(dominantHue: 180.0),
+          tolerance: tolerance,
+        );
+
+        expect(bodyRatioResult!.decision.direction, CoachingDirection.none);
+        expect(bodyRatioResult.decision.attribute, CoachingAttribute.bodyRatio);
+        expect(symmetryResult!.decision.direction, CoachingDirection.none);
+        expect(symmetryResult.decision.attribute, CoachingAttribute.symmetry);
+        expect(hueResult!.decision.direction, CoachingDirection.none);
+        expect(hueResult.decision.attribute, CoachingAttribute.hue);
+      },
+    );
+
+    test(
+      'composition and lighting tiers are tagged correctly on the decision',
+      () {
+        final compositionResult = engine.evaluate(
+          subject: _subject(),
+          scene: _scene(negativeSpaceScore: 0.05),
+          reference: _reference(negativeSpaceScore: 0.95),
+          tolerance: tolerance,
+        );
+        final lightingResult = engine.evaluate(
+          subject: _subject(),
+          scene: _scene(brightness: 0.05),
+          reference: _reference(overallBrightness: 0.95),
+          tolerance: tolerance,
+        );
+
+        expect(compositionResult!.decision.tier, CoachingTier.composition);
+        expect(lightingResult!.decision.tier, CoachingTier.lighting);
+      },
+    );
+
+    test(
+      'severityBand matches the tiered phrase actually picked (mild/moderate/strong)',
+      () {
+        final mild = engine.evaluate(
+          subject: _subject(shoulderAngleDegrees: 30.0),
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+        final moderate = engine.evaluate(
+          subject: _subject(shoulderAngleDegrees: 50.0),
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+        final strong = engine.evaluate(
+          subject: _subject(shoulderAngleDegrees: 80.0),
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+
+        expect(mild!.decision.severityBand, CoachingSeverityBand.mild);
+        expect(moderate!.decision.severityBand, CoachingSeverityBand.moderate);
+        expect(strong!.decision.severityBand, CoachingSeverityBand.strong);
+      },
+    );
+
+    test(
+      'dedupeKey is identical for two evaluations that produce the same phrase',
+      () {
+        final first = engine.evaluate(
+          subject: _subject(shoulderAngleDegrees: 50.0),
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+        final second = engine.evaluate(
+          subject: _subject(
+            shoulderAngleDegrees: 52.0,
+          ), // same band, same direction
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+
+        expect(first!.phrase, second!.phrase);
+        expect(first.decision.dedupeKey, second.decision.dedupeKey);
+      },
+    );
+
+    test(
+      'dedupeKey differs when the severity band (and therefore the phrase) differs',
+      () {
+        final moderate = engine.evaluate(
+          subject: _subject(shoulderAngleDegrees: 50.0),
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+        final strong = engine.evaluate(
+          subject: _subject(shoulderAngleDegrees: 80.0),
+          scene: _scene(),
+          reference: _reference(shoulderAngleDegrees: 0.0),
+          tolerance: tolerance,
+        );
+
+        expect(moderate!.phrase, isNot(equals(strong!.phrase)));
+        expect(
+          moderate.decision.dedupeKey,
+          isNot(equals(strong.decision.dedupeKey)),
+        );
+      },
+    );
+
+    test(
+      'dedupeKey for expression is keyed on targetExpression, not severity',
+      () {
+        final result = engine.evaluate(
+          subject: _subject(expression: 'serious'),
+          scene: _scene(),
+          reference: _reference(expression: 'smiling'),
+          tolerance: tolerance,
+        );
+
+        expect(result!.decision.dedupeKey, contains('smiling'));
+      },
+    );
   });
 }

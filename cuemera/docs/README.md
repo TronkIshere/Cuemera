@@ -12,7 +12,7 @@ Cuemera is a Flutter app that acts as a real-time AI fashion photographer: the u
 
 **High-level flow:** Splash (camera permission, theme/ML Kit/MemoryService init) → Home (Shoot / Album / Settings) → Camera session (pick reference photo → live pose/face/scene analysis → voice coaching → auto/manual capture → score) → Album (browse captured shots, persisted across restarts).
 
-**Stack:** Flutter + Riverpod (state, single DI path), Google ML Kit (pose/face/selfie-segmentation, on-device, live face detector now runs with classification enabled), `flutter_tts` (voice), `camera`, `image` + `palette_generator` (reference-photo pixel analysis), Hive (now wired into `AlbumNotifier` for real cross-restart persistence).
+**Stack:** Flutter + Riverpod (state, single DI path), Google ML Kit (pose/face/selfie-segmentation, on-device — live face detector runs with classification enabled, though `eyesOpen`/`expression` are currently disabled downstream, see below), `flutter_tts` (voice), `camera`, `image` + `palette_generator` (reference-photo pixel analysis), Hive (wired into `AlbumNotifier` for real cross-restart persistence), and (in progress) `flutter_gemma` running Gemma 3 270M on-device for coaching-phrase variety — see `SIGNAL_DISABLE_AND_AI_INTEGRATION_PLAN.md`.
 
 ## 2. Architecture Deep Dive
 
@@ -29,7 +29,7 @@ Cuemera is a Flutter app that acts as a real-time AI fashion photographer: the u
 | `home` | the home/menu screen (Shoot / Album / Settings) — renamed from `goal_selection`, a holdover from a deleted feature (`HomeScreen`, `HomeMenuCard`) |
 | `reference_photo` | pick + analyze a reference photo into a `ReferenceProfile`; tolerance sliders; detection-threshold config |
 | `scene_analysis` | per-frame pose/face/light analysis → `SubjectProfile` / `SceneProfile`, EMA smoothing |
-| `voice_director` | compares live vs. reference, picks the single worst-deviating attribute, speaks a hardcoded phrase (still rule-based — see Limitations, Model-driven upgrade) |
+| `voice_director` | compares live vs. reference, picks the single worst-deviating attribute (`ComparisonMath`-driven), speaks a phrase — the decision (attribute/direction/severity) is now decoupled from the phrase text (`CoachingDecision`); an on-device LLM is being wired in to vary the wording, still falling back to today's hand-authored phrase bank when unavailable — see `SIGNAL_DISABLE_AND_AI_INTEGRATION_PLAN.md` |
 | `capture` | decides *when* to auto-capture, builds a `Shot`, shot-type selection |
 | `editorial_score` | scores a `Shot` against the reference (0–100 overall + per-category breakdown) |
 | `album` | Hive-backed persisted store of captured `Shot`s, browsing UI, "diversity" / "next shot" suggestions (now reachable via shot-type picker) |
@@ -62,7 +62,7 @@ flowchart TD
     AC -->|resumes stream| ONFRAME
 ```
 
-The live `FaceDetector` (`ml_kit_service.dart`) now runs with `enableClassification: true`, so `eyesOpen`/expression signals are populated on the live feed. The live and reference-photo expression classifiers have been unified into a single shared function (`core/services/expression_classifier.dart`), so both paths now agree on labels and thresholds — though both remain rule-based threshold ladders rather than a trained model (see `LIMITATIONS_AND_ROADMAP.md`, Model-driven upgrade).
+The live `FaceDetector` (`ml_kit_service.dart`) runs with `enableClassification: true`, so ML Kit still computes `eyesOpen`/expression signals — but `FaceAnalyzer` now discards both before they reach `SubjectProfile` (`enableEyeAndExpressionSignals = false`, see `SIGNAL_DISABLE_AND_AI_INTEGRATION_PLAN.md`'s Track 1): the classified values were flipping constantly frame-to-frame with no hysteresis against ML Kit's raw probability noise. `facePitch`/`faceRoll`/`mouthOpenRatio`/`eyeOpenRatio` (the continuous ratio, not the bool) are unaffected. The live and reference-photo expression classifiers remain unified into a single shared function (`core/services/expression_classifier.dart`) for whenever this is re-enabled — both remain rule-based threshold ladders rather than a trained model (see `LIMITATIONS_AND_ROADMAP.md`, Model-driven upgrade).
 
 `autoCaptureProvider` now resumes the image stream (`cameraService.startImageStream`) after every auto-capture, mirroring the manual-capture path — the previous "first auto-capture freezes the preview forever" bug is resolved.
 

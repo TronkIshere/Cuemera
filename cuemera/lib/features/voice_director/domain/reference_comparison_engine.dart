@@ -1,5 +1,6 @@
 // features/voice_director/domain/reference_comparison_engine.dart
 import 'package:cuemera/features/voice_director/domain/priority_engine.dart';
+import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
 
 import '../../reference_photo/domain/comparison_math.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
@@ -8,8 +9,14 @@ import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
 
 class ReferenceComparisonEngine {
-  static const double _mildSeverityCeiling = 0.4;
-  static const double _moderateSeverityCeiling = 0.75;
+  // Severity-band boundaries live on CoachingDecision now (single source of
+  // truth shared between the tiered-phrase text and CoachingDecision's own
+  // severityBand/dedupeKey) — kept as local aliases here so the existing
+  // _tieredPhrase call sites below don't all need to change.
+  static const double _mildSeverityCeiling =
+      CoachingDecision.mildSeverityCeiling;
+  static const double _moderateSeverityCeiling =
+      CoachingDecision.moderateSeverityCeiling;
   static const bool _faceRollDirectionIsMirrored = false;
 
   String _tieredPhrase(
@@ -36,6 +43,7 @@ class ReferenceComparisonEngine {
       phrase: worst.phrase,
       severity: worst.severity,
       sourceLayer: 'reference_comparison_engine',
+      decision: worst.decision,
     );
   }
 
@@ -132,7 +140,8 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final phrase = subjectValue > referenceValue
+    final subjectAheadOfReference = subjectValue > referenceValue;
+    final phrase = subjectAheadOfReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Square your shoulders just a touch',
@@ -149,9 +158,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.shoulderAngle,
+        direction: subjectAheadOfReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -177,7 +193,8 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final phrase = subjectValue > referenceValue
+    final subjectAheadOfReference = subjectValue > referenceValue;
+    final phrase = subjectAheadOfReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Tilt your chin down just a touch',
@@ -194,9 +211,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.facePitch,
+        direction: subjectAheadOfReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -243,9 +267,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.faceRoll,
+        direction: subjectTiltedMoreTowardRight
+            ? CoachingDirection.right
+            : CoachingDirection.left,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -285,9 +316,14 @@ class ReferenceComparisonEngine {
     );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.bodyRatio,
+        direction: CoachingDirection.none, // single-direction by design
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -318,7 +354,8 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final phrase = subjectValue > referenceValue
+    final subjectMoreOpenThanReference = subjectValue > referenceValue;
+    final phrase = subjectMoreOpenThanReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Close your mouth just slightly',
@@ -335,9 +372,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.mouthOpen,
+        direction: subjectMoreOpenThanReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -368,7 +412,8 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final phrase = subjectValue > referenceValue
+    final subjectMoreOpenThanReference = subjectValue > referenceValue;
+    final phrase = subjectMoreOpenThanReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Relax your eyes just a touch',
@@ -385,9 +430,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.eyeOpen,
+        direction: subjectMoreOpenThanReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -414,9 +466,15 @@ class ReferenceComparisonEngine {
         "Try a more '$referenceValue' expression, like the reference";
 
     return _AttributeEvaluation(
-      severity: (deviation * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.expression,
+        direction: CoachingDirection.none,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: deviation,
+        fallbackPhrase: phrase,
+        targetExpression: referenceValue,
+      ),
     );
   }
 
@@ -442,7 +500,8 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
-    final phrase = subjectValue > referenceValue
+    final subjectHasMoreSpaceThanReference = subjectValue > referenceValue;
+    final phrase = subjectHasMoreSpaceThanReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Fill the frame just a touch more',
@@ -459,9 +518,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.negativeSpace,
+        direction: subjectHasMoreSpaceThanReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.composition,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -496,9 +562,14 @@ class ReferenceComparisonEngine {
     );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.symmetry,
+        direction: CoachingDirection.none, // single-direction by design
+        tier: CoachingTier.composition,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -524,7 +595,8 @@ class ReferenceComparisonEngine {
       thresholdForColor,
     );
 
-    final phrase = subjectValue > referenceValue
+    final subjectBrighterThanReference = subjectValue > referenceValue;
+    final phrase = subjectBrighterThanReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Move to slightly softer light, like your reference',
@@ -541,9 +613,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.brightness,
+        direction: subjectBrighterThanReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.lighting,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -574,7 +653,9 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
-    final phrase = subjectValue > normalizedReferenceValue
+    final subjectMoreClutteredThanReference =
+        subjectValue > normalizedReferenceValue;
+    final phrase = subjectMoreClutteredThanReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Clean up the background just a touch, like your reference',
@@ -591,9 +672,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.backgroundClutter,
+        direction: subjectMoreClutteredThanReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.composition,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -619,7 +707,8 @@ class ReferenceComparisonEngine {
       thresholdForColor,
     );
 
-    final phrase = subjectValue < referenceValue
+    final subjectCoolerThanReference = subjectValue < referenceValue;
+    final phrase = subjectCoolerThanReference
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Find slightly warmer tones, like your reference',
@@ -636,9 +725,16 @@ class ReferenceComparisonEngine {
           );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.warmth,
+        direction: subjectCoolerThanReference
+            ? CoachingDirection.increase
+            : CoachingDirection.decrease,
+        tier: CoachingTier.lighting,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 
@@ -677,21 +773,29 @@ class ReferenceComparisonEngine {
     );
 
     return _AttributeEvaluation(
-      severity: (normalizedSeverity * 10).round(),
       deviationExceedsThreshold: deviationExceedsThreshold,
-      phrase: phrase,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.hue,
+        direction: CoachingDirection.none, // single-direction by design
+        tier: CoachingTier.lighting,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
     );
   }
 }
 
 class _AttributeEvaluation {
   const _AttributeEvaluation({
-    required this.severity,
     required this.deviationExceedsThreshold,
-    required this.phrase,
+    required this.decision,
   });
 
-  final int severity;
   final bool deviationExceedsThreshold;
-  final String phrase;
+  final CoachingDecision decision;
+
+  // Derived rather than stored separately, so severity/phrase can never
+  // drift out of sync with the decision they came from.
+  int get severity => (decision.normalizedSeverity * 10).round();
+  String get phrase => decision.fallbackPhrase;
 }

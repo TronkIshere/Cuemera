@@ -31,19 +31,25 @@ final nextActionProvider = Provider<PriorityAction?>((ref) {
   );
 });
 
-final voiceDirectorListenerProvider = Provider<void>((ref) {
+final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
   final ttsService = ref.watch(ttsServiceProvider);
 
-  String? lastPhrase;
+  // Dedupe now keys off the decision's identity (attribute + direction +
+  // severity band, or attribute + target expression) rather than the
+  // spoken phrase text. Today phrase text is a deterministic function of
+  // exactly those same inputs, so this is behavior-identical to the old
+  // phrase-string-equality check — but it's what lets Phase 2 vary the
+  // actual spoken wording for the same decision without breaking dedupe.
+  String? lastDedupeKey;
   Timer? debounceTimer;
 
   ref.listen<PriorityAction?>(nextActionProvider, (previous, next) {
     if (next == null) return;
-    if (next.phrase == lastPhrase) return;
+    if (next.decision.dedupeKey == lastDedupeKey) return;
 
     debounceTimer?.cancel();
     debounceTimer = Timer(const Duration(milliseconds: 400), () {
-      lastPhrase = next.phrase;
+      lastDedupeKey = next.decision.dedupeKey;
       ttsService.speak(next.phrase);
     });
   });
