@@ -11,4 +11,9 @@ abstract class AppStrings {
   static const homeAlbumSubtitle = 'Past sessions & exports';
   static const homeSettingsSubtitle = 'Preferences & devices';
   static const homeTapToBegin = 'Tap to begin';
+
+  static const settingsAiCoachingLabel = 'AI Coaching Phrases';
+  static const settingsAiCoachingSubtitle =
+      'Natural, varied coaching instead of fixed phrases (~300MB download)';
+  static const settingsAiCoachingInstalling = 'Downloading model';
 }

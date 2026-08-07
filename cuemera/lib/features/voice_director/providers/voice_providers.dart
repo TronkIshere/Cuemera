@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/tts_service.dart';
 import '../../reference_photo/providers/reference_providers.dart';
 import '../../scene_analysis/providers/scene_providers.dart';
+import '../../settings/providers/ai_coaching_providers.dart';
 import '../domain/priority_engine.dart';
 import '../domain/reference_comparison_engine.dart';
 import 'coaching_phrase_model_providers.dart';
@@ -52,8 +53,14 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
 
   Future<void> speakForDecision(PriorityAction action, int epoch) async {
     final aiUnavailable = ref.read(coachingAiUnavailableProvider);
+    final aiCoachingEnabled = ref.read(
+      aiCoachingSettingsProvider.select((s) => s.enabled),
+    );
 
-    if (aiUnavailable || !phraseModel.isReady) {
+    if (aiUnavailable ||
+        !aiCoachingEnabled ||
+        phraseModel == null ||
+        !phraseModel.isReady) {
       ttsService.speak(action.phrase);
       return;
     }

@@ -2,61 +2,32 @@
 
 All P0 and P1 items are resolved. What remains is grouped below by what it needs to move forward.
 
+*(This file now also covers what used to live in `APPENDIX.md` — the two had drifted into near-duplicates; `APPENDIX.md` is now just a pointer here.)*
+
 ## 1. Needs physical-device testing
 
 - **`CameraService.capture()`'s per-photo controller lifecycle needs a redesign decision.** It currently spins up a brand-new `ResolutionPreset.max` `CameraController` for every single photo (on top of the two already-running controllers), then disposes it. Latency is instrumented (`lastCaptureControllerSetupLatency`/`lastCaptureShutterLatency`/`lastCaptureControllerTeardownLatency`, logged via `debugPrint` on every capture) — pull real numbers from a device, then decide whether reusing an existing controller (trading off capture resolution) is worth it.
 - **Measure the real wall-clock impact of `ReferenceImageAnalyzer.analyze()`'s concurrency.** Its five independent steps (pose, face, segmentation, decode, palette) now run via `Future.wait` instead of sequentially. Confirm on a physical device that this actually cuts latency — ML Kit's native platform-channel bindings may serialize these calls internally regardless of Dart-level concurrency, in which case the real-world win could be smaller than assumed.
 - **Verify `_evaluateFaceRoll`'s left/right direction in `reference_comparison_engine.dart`.** The phrase direction is derived from ML Kit's documented `headEulerAngleZ` sign convention, gated behind a `_faceRollDirectionIsMirrored` flag (currently `false`). This hasn't been confirmed on a physical device — tilt your head to a known side and check which phrase fires; flip the flag if it's backward. Now that the `subject_profile.dart`/`tracking_engine.dart` fix means this evaluator actually runs in production, getting the direction right matters more than when it was previously dead code.
 
-## 2. Needs a product decision
+## 2. Needs test coverage / code audit
+
+- **`reference_image_analyzer.dart`'s `analyze()` orchestration is still untested.** It constructs real `PoseDetector`/`FaceDetector`/`SelfieSegmenter` instances internally and calls their native `processImage()` directly — there's no seam to inject a fake, so exercising `analyze()` itself needs a physical device/platform channel, not a pure-Dart test. `face_analyzer_test.dart` now covers `face_analyzer.dart` fully (`Face`'s public constructor makes it directly testable), and `reference_image_analyzer_test.dart` covers the four pure pixel/mask helpers (`estimateNegativeSpace`/`estimateSymmetry`/`estimateBackgroundClutter`/`estimateBrightness`, made public + `@visibleForTesting` for exactly this purpose) — but the pose/face detection calls and the `bodyRatio`/`poseLandmarkPoints` landmark logic inside `_analyzePose`/`_analyzeFace` remain uncovered. If `analyze()` itself needs to be under test, it likely needs a constructor-injected detector seam first.
+
+## 3. Needs a product decision
 
 - **Wire `ErrorReportingService` to a real remote sink.** It currently only retains the last 200 reports in memory (`FlutterError.onError`, `PlatformDispatcher.instance.onError`, `runZonedGuarded`, and every previously-silent `catch` all route through it) — reports don't survive app restart and never leave the device. A `TODO(remote-sink)` marks the extension point; needs a service chosen (Firebase Crashlytics, Sentry, custom backend) and an account/API keys before this can be wired up.
 
-## 3. Model-driven upgrade — the core "complete product" gap
+## 4. Model-driven upgrade — the core "complete product" gap
 
-**In progress.** The direction below (on-device GenAI generating the
-coaching phrase, rule-based `ComparisonMath` attribute/severity selection
-kept underneath, phrase bank retained as the fallback) was chosen — the
-specific route settled on is Gemma 3 270M via `flutter_gemma`, not the
-Gemini Nano/Foundation Models path this section originally sketched.
+**Track 2 (Gemma 3 270M coaching phrases) is now active.** Phases 0–2 are code-complete and device-verified: the integration smoke test passed on a physical device (all 5 sample `CoachingDecision`s installed and generated successfully), and a Settings toggle ("AI Coaching Phrases") now controls activation end-to-end — persisted via `MemoryService`, gating both `ensureInstalled()` and the live coaching path in `voiceDirectorListenerProvider`. See `README.md` §4 for the full account, including two bugs found and fixed getting here (an unawaited `FlutterGemma.initialize()` race condition, and an `assert`-based crash when `HF_TOKEN` is unset).
 
-Decoupling the decision from the phrase text (`CoachingDecision`) and
-wiring the model into the live coaching path (`voiceDirectorListenerProvider`,
-with a 3-second timeout and fallback to `decision.fallbackPhrase` on
-failure) are both code-complete. **None of it is active yet** — nothing
-in the app calls `CoachingPhraseModelService.ensureInstalled()`, so
-`phraseModel.isReady` is always `false` and every decision still
-resolves to `decision.fallbackPhrase`, byte-for-byte identical to before
-this work started. `voice_providers.dart` logs every generation attempt
-via `debugPrint` (latency, attribute, success/fail — mirrors
-`CameraService.capture()`'s existing instrumentation), but there's no
-real data yet since nothing has triggered a real attempt.
+**Remaining, in order:**
+1. **Capture a full Phase 3 dataset.** Only one of the 5 sample decisions' latency was captured in this session's log (`hue`/strong: 2200ms). Re-run the smoke test and save the complete output — need all 5 latencies, plus real-device usage during an actual shoot, to judge whether `gemma-3-270m-it-q8` is the right size/quantization and whether phrasing is actually natural-sounding.
+2. **Getting the Hugging Face gated-model access right the first time is fiddly** — worth a one-line note in onboarding docs for future contributors: having a valid `HF_TOKEN` isn't sufficient on its own; the account behind that token must separately visit `litert-community/gemma-3-270m-it` on huggingface.co and accept the Gemma license, or every download attempt fails with an HTTP 401.
+3. Once (1) is done and the app's seen real use: judge phrase-quality/naturalness, and revisit whether the ~304MB download size is worth it for a 270M model vs. a smaller quantization if one becomes available.
 
-**Model/bundling decisions already made:** `litert-community/gemma-3-270m-it`'s
-`gemma3-270m-it-q8.task` mobile build (int8, ~304MB, gated on Hugging
-Face), downloaded on-demand (`.fromNetwork`) rather than bundled in app
-assets, token sourced via build-time `--dart-define=HF_TOKEN=...`. Files:
-`coaching_decision.dart`, `coaching_phrase_model_service.dart`,
-`coaching_phrase_model_providers.dart`,
-`integration_test/coaching_phrase_model_smoke_test.dart`. `pubspec.yaml`
-updated (`flutter_gemma`, `flutter_gemma_mediapipe`, `integration_test`,
-`environment.sdk` bumped to `^3.12.0` — needs an actual `flutter upgrade`,
-not just the pubspec edit).
-
-**Open items, in the order they unblock each other:**
-1. Run the smoke test on a physical device with network access and an
-   HF token that's accepted the Gemma license:
-   ```
-   flutter test integration_test/coaching_phrase_model_smoke_test.dart \
-     --dart-define=HF_TOKEN=<token> -d <device-id>
-   ```
-2. Decide where `ensureInstalled()` gets triggered from (a settings
-   toggle, automatic on first reference-photo pick, etc.) and build it —
-   this is what actually turns the model on.
-3. Once both of the above are done and the app's been used for real:
-   latency against the existing 80ms/frame throttle budget, a
-   phrase-quality/naturalness pass, and whether `gemma-3-270m-it-q8` is
-   the right size/quantization — all from real numbers, not assumption.
+**Toolchain note (this session):** getting `flutter_gemma`/`flutter_gemma_mediapipe` building on Android required bumping AGP (`8.7.3` → `8.11.1`), Gradle (`8.12` → `8.14.3`), Kotlin (`2.1.0` → `2.2.20`), and NDK (`27.0.12077973` → `28.2.13676358`, specifically required by `integration_test`). All are now current — see `README.md`'s Toolchain section. Worth knowing if this project sits untouched for a while and these plugins get further updated: the AAR-metadata-vs-AGP-version failure mode (`checkDebugAarMetadata`) is likely to recur with future dependency bumps and is a quick diagnosis (`./gradlew assembleDebug --stacktrace` — the real error is always further up than Flutter's wrapped exit-code message suggests).
 
 Two items from this section remain untouched and still open:
 - **Fold the unified expression classifier (`expression_classifier.dart`) into that same modeling effort**, rather than continuing to hand-tune its probability thresholds. (Currently gated off the live path entirely by Track 1's signal-disable flag, which further reduces urgency here for now.)

@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.example.cuemera"
     compileSdk = 36
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -29,6 +29,12 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            pickFirsts += listOf("**/libc++_shared.so")
         }
     }
 }

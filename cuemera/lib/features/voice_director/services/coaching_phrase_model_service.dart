@@ -22,9 +22,9 @@ class CoachingPhraseModelService {
 
   bool get isReady => _model != null;
 
-  void _ensurePluginInitialized() {
+  Future<void> _ensurePluginInitialized() async {
     if (_pluginInitialized) return;
-    FlutterGemma.initialize(
+    await FlutterGemma.initialize(
       inferenceEngines: const [MediaPipeEngine()],
       huggingFaceToken: huggingFaceToken.isEmpty ? null : huggingFaceToken,
     );
@@ -33,7 +33,7 @@ class CoachingPhraseModelService {
 
   Future<void> ensureInstalled({void Function(int percent)? onProgress}) async {
     if (isReady) return;
-    _ensurePluginInitialized();
+    await _ensurePluginInitialized();
 
     await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
         .fromNetwork(modelUrl, token: huggingFaceToken)
@@ -65,12 +65,12 @@ class CoachingPhraseModelService {
     final buffer = StringBuffer()
       ..writeln(
         'You are a photography coach speaking one short line out loud to '
-        'someone posing for a photo, live, in the moment.',
+            'someone posing for a photo, live, in the moment.',
       )
       ..writeln(
         'Reply with ONLY the spoken line — under 12 words, natural and '
-        'encouraging, no numbers or technical terms, no preamble, no '
-        'quotation marks.',
+            'encouraging, no numbers or technical terms, no preamble, no '
+            'quotation marks.',
       )
       ..writeln()
       ..writeln('Attribute to correct: ${decision.attribute.name}');
@@ -87,7 +87,7 @@ class CoachingPhraseModelService {
       ..writeln()
       ..writeln(
         'For tone and style only (do not copy this verbatim): '
-        '"${decision.fallbackPhrase}"',
+            '"${decision.fallbackPhrase}"',
       );
 
     return buffer.toString();
