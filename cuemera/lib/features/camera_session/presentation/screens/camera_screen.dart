@@ -438,8 +438,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       );
     }
 
-    final subject = ref.watch(subjectProfileProvider);
-    final nextAction = ref.watch(nextActionProvider);
     final score = ref.watch(currentScoreProvider);
     final selectedReferencePath = ref.watch(selectedReferenceImagePathProvider);
     final mlKitUnavailable = ref.watch(mlKitUnavailableProvider);
@@ -532,31 +530,37 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               ),
             ),
           ),
-        if (nextAction != null)
-          Positioned(
-            top: phraseChipTop,
-            left: AppSpacing.md,
-            right: AppSpacing.md,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.sm,
+        Positioned(
+          top: phraseChipTop,
+          left: AppSpacing.md,
+          right: AppSpacing.md,
+          child: Consumer(
+            builder: (context, ref, _) {
+              final nextAction = ref.watch(nextActionProvider);
+              if (nextAction == null) return const SizedBox.shrink();
+              return Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.surface.withOpacity(0.85),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: colors.accent, width: 1.5),
+                  ),
+                  child: Text(
+                    nextAction.phrase,
+                    style: AppTypography.body(colors).copyWith(
+                      color: colors.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-                decoration: BoxDecoration(
-                  color: colors.surface.withOpacity(0.85),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: colors.accent, width: 1.5),
-                ),
-                child: Text(
-                  nextAction.phrase,
-                  style: AppTypography.body(
-                    colors,
-                  ).copyWith(color: colors.accent, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
+              );
+            },
           ),
+        ),
         if (_hasCaptured && score != null)
           Positioned(
             top: secondRowTop,

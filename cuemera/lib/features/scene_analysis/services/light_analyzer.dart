@@ -21,6 +21,19 @@ class LightAnalyzer {
   /// Leave `false` outside of that verification pass — this runs every
   /// analyzed frame and would otherwise flood the log.
   static const bool debugLogColorToneSamples = false;
+
+  /// Set to `true` to log analyzeLight()'s per-frame wall-clock cost via
+  /// debugPrint, for sizing Finding B from the camera-pipeline
+  /// performance audit against a real device. Leave `false` normally —
+  /// this runs every analyzed frame and would otherwise flood the log.
+  static const bool debugLogFrameTiming = false;
+
+  /// Wall-clock cost of the most recent analyzeLight() call, in
+  /// microseconds. Updated every call regardless of
+  /// [debugLogFrameTiming], so a debug UI can read it without needing
+  /// log spam turned on.
+  int? lastAnalyzeLightMicros;
+
   SceneProfile analyzeLight(
     dynamic cameraFrame,
     SceneProfile previous, {
@@ -30,15 +43,30 @@ class LightAnalyzer {
     final image = cameraFrame as CameraImage?;
     if (image == null) return previous;
 
+    final stopwatch = Stopwatch()..start();
+
     final brightness = _estimateBrightness(image);
     final lightDirectionDegrees = _estimateLightDirection(image);
-    final backgroundClutterCount = _estimateBackgroundClutter(
+
+    final subjectRatio = _computeSubjectRatio(segmentationMask);
+    final backgroundVariance = _computeBackgroundVariance(
       image,
       segmentationMask,
     );
-    final negativeSpaceScore = _estimateNegativeSpace(image, segmentationMask);
+
+    final backgroundClutterCount = _backgroundClutterScore(backgroundVariance);
+    final negativeSpaceScore = _negativeSpaceScore(subjectRatio);
     final symmetryScore = _estimateSymmetry(image, segmentationMask, subject);
     final (hue, warmth) = _estimateColorTone(image);
+    final depthEstimate = _depthScore(subjectRatio, backgroundVariance);
+
+    stopwatch.stop();
+    lastAnalyzeLightMicros = stopwatch.elapsedMicroseconds;
+    if (debugLogFrameTiming) {
+      debugPrint(
+        '[LightAnalyzer] analyzeLight: ${stopwatch.elapsedMicroseconds}us',
+      );
+    }
 
     return previous.copyWith(
       brightness: brightness,
@@ -46,7 +74,7 @@ class LightAnalyzer {
       negativeSpaceScore: negativeSpaceScore,
       symmetryScore: symmetryScore,
       backgroundClutterCount: backgroundClutterCount,
-      depthEstimate: _estimateDepth(image, segmentationMask),
+      depthEstimate: depthEstimate,
       liveWarmthScore: warmth,
       liveDominantHue: hue,
     );
@@ -136,21 +164,22 @@ class LightAnalyzer {
     return degrees;
   }
 
-  double _estimateNegativeSpace(CameraImage image, SegmentationMask? mask) {
-    if (mask == null) return 0.0;
+  double? _computeSubjectRatio(SegmentationMask? mask) {
+    if (mask == null) return null;
 
     final confidences = mask.confidences;
-    if (confidences.isEmpty) return 0.0;
+    if (confidences.isEmpty) return null;
 
     int subjectPixels = 0;
     for (final confidence in confidences) {
       if (confidence > 0.5) subjectPixels++;
     }
 
-    final total = confidences.length;
-    if (total == 0) return 0.0;
+    return subjectPixels / confidences.length;
+  }
 
-    final subjectRatio = subjectPixels / total;
+  double _negativeSpaceScore(double? subjectRatio) {
+    if (subjectRatio == null) return 0.0;
     return (1.0 - subjectRatio).clamp(0.0, 1.0);
   }
 
@@ -196,14 +225,17 @@ class LightAnalyzer {
     return balance.clamp(0.0, 1.0);
   }
 
-  int _estimateBackgroundClutter(CameraImage image, SegmentationMask? mask) {
+  double? _computeBackgroundVariance(
+    CameraImage image,
+    SegmentationMask? mask,
+  ) {
     final plane = image.planes.first;
     final bytes = plane.bytes;
     final width = image.width;
     final height = image.height;
     final bytesPerRow = plane.bytesPerRow;
 
-    if (bytes.isEmpty || width <= 0 || height <= 0) return 0;
+    if (bytes.isEmpty || width <= 0 || height <= 0) return null;
 
     List<double>? confidences;
     int maskWidth = width;
@@ -249,69 +281,20 @@ class LightAnalyzer {
       previousValue = null;
     }
 
-    if (sampleCount == 0) return 0;
+    if (sampleCount == 0) return null;
+    return varianceSum / sampleCount;
+  }
 
-    final avgVariance = varianceSum / sampleCount;
-    final clutterScore = (avgVariance / 12.0).clamp(0.0, 10.0);
+  int _backgroundClutterScore(double? variance) {
+    if (variance == null) return 0;
+    final clutterScore = (variance / 12.0).clamp(0.0, 10.0);
     return clutterScore.round();
   }
 
-  double? _estimateDepth(CameraImage image, SegmentationMask? mask) {
-    if (mask == null) return null;
+  double? _depthScore(double? subjectRatio, double? backgroundVariance) {
+    if (subjectRatio == null) return null;
 
-    final confidences = mask.confidences;
-    if (confidences.isEmpty) return null;
-
-    int subjectPixels = 0;
-    for (final confidence in confidences) {
-      if (confidence > 0.5) subjectPixels++;
-    }
-
-    final total = confidences.length;
-    final subjectRatio = total == 0 ? 0.0 : subjectPixels / total;
-
-    final plane = image.planes.first;
-    final bytes = plane.bytes;
-    final width = image.width;
-    final height = image.height;
-    final bytesPerRow = plane.bytesPerRow;
-    final maskWidth = mask.width;
-
-    const stepX = 6;
-    const stepY = 6;
-
-    double varianceSum = 0;
-    int sampleCount = 0;
-    int? previousValue;
-
-    for (var y = 0; y < height; y += stepY) {
-      final rowOffset = y * bytesPerRow;
-      if (rowOffset >= bytes.length) continue;
-
-      for (var x = 0; x < width; x += stepX) {
-        final index = rowOffset + x;
-        if (index >= bytes.length) continue;
-
-        bool isBackground = true;
-        final maskIndex = y * maskWidth + x;
-        if (maskIndex < confidences.length && confidences[maskIndex] > 0.5) {
-          isBackground = false;
-        }
-
-        if (!isBackground) continue;
-
-        final value = bytes[index];
-        if (previousValue != null) {
-          final diff = (value - previousValue).abs();
-          varianceSum += diff;
-          sampleCount++;
-        }
-        previousValue = value;
-      }
-      previousValue = null;
-    }
-
-    final avgVariance = sampleCount == 0 ? 0.0 : varianceSum / sampleCount;
+    final avgVariance = backgroundVariance ?? 0.0;
     final normalizedVariance = (avgVariance / 20.0).clamp(0.0, 1.0);
     final sharpnessDepthSignal = 1.0 - normalizedVariance;
 

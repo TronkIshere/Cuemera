@@ -27,7 +27,7 @@ class MlKitService {
     options: FaceDetectorOptions(
       performanceMode: FaceDetectorMode.fast,
       enableTracking: true,
-      enableClassification: true,
+      enableClassification: false,
     ),
   );
   final SelfieSegmenter _segmenter = SelfieSegmenter(
@@ -39,19 +39,12 @@ class MlKitService {
   final _availabilityController = StreamController<bool>.broadcast();
   bool _busy = false;
 
-  /// How many consecutive per-frame failures (e.g. the on-device model
-  /// failing to download/initialize) before we flag ML Kit as unavailable
-  /// to the UI, rather than reacting to one transient frame error.
   static const int _maxConsecutiveFailuresBeforeFlagging = 5;
   int _consecutiveFailures = 0;
   bool _flaggedUnavailable = false;
 
   Stream<MlKitAnalysisResult> get analysisStream => _resultController.stream;
 
-  /// Emits `true` once ML Kit is confirmed unavailable (repeated
-  /// processImage failures — typically a failed on-device model
-  /// download/initialization) and `false` again if it starts succeeding
-  /// afterward. Does not emit on every single frame.
   Stream<bool> get unavailableStream => _availabilityController.stream;
 
   Future<void> processImage(
