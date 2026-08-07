@@ -190,6 +190,37 @@ void main() {
     );
   });
 
+  group('evaluate — within-tier severity tie-break', () {
+    test(
+      'picks the higher-severity candidate when two pose/face attributes both exceed threshold',
+      () {
+        // Shoulder: deviation 50 -> normalizedSeverity 0.56 (moderate, ~6).
+        // FacePitch: deviation 80 -> normalizedSeverity 0.89 (strong, ~9).
+        // Both are in the same (pose/face) tier and both exceed the pose
+        // threshold (22.5°) — _pickWorst must choose facePitch, the
+        // higher-severity candidate, not whichever was added to the tier
+        // list first.
+        final result = engine.evaluate(
+          subject: _subject(
+            shoulderAngleDegrees: 50.0,
+            faceAngleXDegrees: 80.0,
+          ),
+          scene: _scene(),
+          reference: _reference(
+            shoulderAngleDegrees: 0.0,
+            faceAngleXDegrees: 0.0,
+          ),
+          tolerance: tolerance,
+        );
+
+        expect(
+          result!.phrase,
+          "Tilt your head down a lot more — you're well above the reference angle",
+        );
+      },
+    );
+  });
+
   group('evaluate — severity tiering', () {
     test('mild shoulder deviation gets the mild phrase', () {
       // deviation = 30, normalizedSeverity = 30/90 = 0.33 (< 0.4 ceiling)
@@ -248,6 +279,82 @@ void main() {
     });
   });
 
+  group('evaluate — facePitch (previously dead-code path)', () {
+    test('mild pitch deviation gets a directional chin-down phrase', () {
+      // deviation = 20, normalizedSeverity = 20/90 = 0.22 (mild)
+      final result = engine.evaluate(
+        subject: _subject(faceAngleXDegrees: 20.0),
+        scene: _scene(),
+        reference: _reference(faceAngleXDegrees: 0.0),
+        tolerance: tolerance,
+      );
+
+      expect(result!.phrase, 'Tilt your chin down just a touch');
+    });
+
+    test('subject below the reference angle gets the chin-up phrase', () {
+      final result = engine.evaluate(
+        subject: _subject(faceAngleXDegrees: 0.0),
+        scene: _scene(),
+        reference: _reference(faceAngleXDegrees: 20.0),
+        tolerance: tolerance,
+      );
+
+      expect(result!.phrase, 'Lift your chin slightly');
+    });
+  });
+
+  group('evaluate — bodyRatio', () {
+    test('moderate framing deviation gets the moderate reframe phrase', () {
+      // relativeDeviation = |1.5 - 1.0| / 1.0 = 0.5 -> normalizedSeverity 0.5
+      final result = engine.evaluate(
+        subject: _subject(bodyRatio: 1.5),
+        scene: _scene(),
+        reference: _reference(bodyRatio: 1.0),
+        tolerance: tolerance,
+      );
+
+      expect(
+        result!.phrase,
+        'Adjust your framing to better match the reference proportions',
+      );
+    });
+
+    test('does not fire (returns null) when reference bodyRatio is zero', () {
+      // relativeDeviation returns null when referenceValue == 0 —
+      // ComparisonMath's divide-by-zero guard — so this evaluator must
+      // skip rather than throw.
+      final result = engine.evaluate(
+        subject: _subject(bodyRatio: 1.5),
+        scene: _scene(),
+        reference: _reference(bodyRatio: 0.0),
+        tolerance: tolerance,
+      );
+
+      expect(result, isNull);
+    });
+  });
+
+  group('evaluate — eyeOpen (previously dead-code path)', () {
+    test(
+      'subject eyes much more open than reference gets the strong phrase',
+      () {
+        // relativeDeviation = |0.5 - 0.2| / 0.2 = 1.5, clamped severity 1.0
+        final result = engine.evaluate(
+          subject: _subject(eyeOpenRatio: 0.5),
+          scene: _scene(),
+          reference: _reference(eyeOpenRatio: 0.2),
+          tolerance: tolerance,
+        );
+
+        expect(
+          result!.phrase,
+          "Your eyes are much more open than the reference — relax them more",
+        );
+      },
+    );
+  });
+
   group('evaluate — newly-directional attributes', () {
     test('mouth-open direction: subject more open than reference', () {
       // relativeDeviation = |0.5 - 0.2| / 0.2 = 1.5, well past threshold
@@ -274,6 +381,88 @@ void main() {
       );
 
       expect(result!.phrase, "Straighten your head — it's tilted to the right");
+    });
+
+    // NOTE: whether "subject tilted more toward the right" actually *is*
+    // the subject's right depends on `_faceRollDirectionIsMirrored`, a
+    // compile-time constant gated on physical-device verification per
+    // LIMITATIONS_AND_ROADMAP.md — it is not exposed for injection, so
+    // this suite (like the roadmap item) can only confirm the *current*
+    // wiring is internally consistent, not which real-world direction it
+    // corresponds to on a given device.
+    test('face-roll: opposite sign gets the mirrored-direction phrase', () {
+      final result = engine.evaluate(
+        subject: _subject(faceAngleZDegrees: 0.0),
+        scene: _scene(),
+        reference: _reference(faceAngleZDegrees: 50.0),
+        tolerance: tolerance,
+      );
+
+      expect(result!.phrase, "Straighten your head — it's tilted to the left");
+    });
+  });
+
+  group('evaluate — symmetry (composition tier)', () {
+    test('moderate off-center deviation gets the moderate phrase', () {
+      // deviation = (0.9 - 0.3).clamp(0,1) = 0.6 -> normalizedSeverity 0.6
+      final result = engine.evaluate(
+        subject: _subject(),
+        scene: _scene(symmetryScore: 0.3),
+        reference: _reference(symmetryScore: 0.9),
+        tolerance: tolerance,
+      );
+
+      expect(result!.phrase, 'Center yourself more, like the reference');
+    });
+  });
+
+  group('evaluate — backgroundClutter (composition tier)', () {
+    test('scene plainer than reference gets the add-interest phrase', () {
+      // subjectValue = 2/10 = 0.2, referenceValue = 8/10 = 0.8
+      // deviation = 0.6 -> normalizedSeverity 0.6 (moderate)
+      final result = engine.evaluate(
+        subject: _subject(),
+        scene: _scene(backgroundClutterCount: 2),
+        reference: _reference(backgroundClutterCount: 8),
+        tolerance: tolerance,
+      );
+
+      expect(
+        result!.phrase,
+        'Add some background interest, like your reference',
+      );
+    });
+  });
+
+  group('evaluate — warmth (lighting tier)', () {
+    test('scene cooler-than-reference direction gets the warm-up phrase', () {
+      // deviation = |0.9 - 0.3| = 0.6 -> normalizedSeverity 0.6 (moderate)
+      // subjectValue (0.9) > referenceValue (0.3) -> "cool down" branch
+      final result = engine.evaluate(
+        subject: _subject(),
+        scene: _scene(liveWarmthScore: 0.9),
+        reference: _reference(warmthScore: 0.3),
+        tolerance: tolerance,
+      );
+
+      expect(result!.phrase, 'Cool down the tones, like your reference');
+    });
+  });
+
+  group('evaluate — hue (lighting tier)', () {
+    test('large circular hue deviation gets the strong match-tone phrase', () {
+      // circularDeviation(0, 180, 360) = 180 (the max) -> severity 1.0
+      final result = engine.evaluate(
+        subject: _subject(),
+        scene: _scene(liveDominantHue: 0.0),
+        reference: _reference(dominantHue: 180.0),
+        tolerance: tolerance,
+      );
+
+      expect(
+        result!.phrase,
+        "Your color tone is quite different from the reference — try to match it",
+      );
     });
   });
 

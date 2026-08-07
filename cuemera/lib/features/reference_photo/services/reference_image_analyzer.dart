@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:cuemera/features/reference_photo/domain/models/reference_profile.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart' show HSLColor, Offset;
 import 'package:flutter/painting.dart' show FileImage;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -93,6 +94,19 @@ class _PaletteAnalysisResult {
 class ReferenceImageAnalyzer {
   static const double _minLandmarkLikelihood = 0.6;
 
+  /// Same guard as `ReferenceAnalysisPainter._findSuspectExtremities` in
+  /// `reference_picker_sheet.dart` (see LIMITATIONS_AND_ROADMAP.md /
+  /// FILE_REFERENCE.md): a wrist/ankle landmark can pass the likelihood
+  /// check above yet still sit at a wildly extrapolated position when the
+  /// reference photo is framed to cut off before that joint. `bodyRatio`
+  /// used to trust the ankle position outright once it cleared
+  /// `_minLandmarkLikelihood`, so a partial-body photo could silently
+  /// skew scoring/tracking. This mirrors the preview's fix: an ankle more
+  /// than 4x the shoulder-width scale away from the hip is treated as an
+  /// unreliable extrapolation and `bodyRatio` is left null rather than
+  /// computed from it.
+  static const double _maxExtremityExtrapolationMultiplier = 4.0;
+
   Future<ReferenceProfile> analyze(String imagePath) async {
     final inputImage = InputImage.fromFilePath(imagePath);
 
@@ -117,10 +131,10 @@ class ReferenceImageAnalyzer {
     double? symmetryScore;
     int? backgroundClutterCount;
     if (mask != null) {
-      negativeSpaceScore = _estimateNegativeSpace(mask);
-      symmetryScore = _estimateSymmetry(mask, poseResult.shoulderAngleDegrees);
+      negativeSpaceScore = estimateNegativeSpace(mask);
+      symmetryScore = estimateSymmetry(mask, poseResult.shoulderAngleDegrees);
       if (decodedResult.decoded != null) {
-        backgroundClutterCount = _estimateBackgroundClutter(
+        backgroundClutterCount = estimateBackgroundClutter(
           decodedResult.decoded!,
           mask,
         );
@@ -129,7 +143,7 @@ class ReferenceImageAnalyzer {
 
     double? overallBrightness;
     if (decodedResult.decoded != null) {
-      overallBrightness = _estimateBrightness(decodedResult.decoded!);
+      overallBrightness = estimateBrightness(decodedResult.decoded!);
     }
 
     return ReferenceProfile(
@@ -184,10 +198,12 @@ class ReferenceImageAnalyzer {
         final leftAnkle = landmarks[PoseLandmarkType.leftAnkle];
         final nose = landmarks[PoseLandmarkType.nose];
 
+        double? torsoScale;
         if (leftShoulder != null && rightShoulder != null) {
           final dy = rightShoulder.y - leftShoulder.y;
           final dx = rightShoulder.x - leftShoulder.x;
           shoulderAngleDegrees = atan2(dy, dx) * 180 / pi;
+          torsoScale = sqrt(dx * dx + dy * dy);
         }
 
         final noseConfident =
@@ -200,7 +216,17 @@ class ReferenceImageAnalyzer {
         if (noseConfident && leftHipConfident && leftAnkleConfident) {
           final upperLength = (leftHip.y - nose.y).abs();
           final lowerLength = (leftAnkle.y - leftHip.y).abs();
-          if (lowerLength > 0) bodyRatio = upperLength / lowerLength;
+          // Bug fix: likelihood alone doesn't catch a confidently-reported
+          // but implausibly-extrapolated ankle (e.g. a half-body reference
+          // photo). Skip bodyRatio for this frame rather than silently
+          // computing it from a bad position.
+          final ankleExtrapolationSuspect =
+              torsoScale != null &&
+              torsoScale > 0 &&
+              lowerLength > _maxExtremityExtrapolationMultiplier * torsoScale;
+          if (lowerLength > 0 && !ankleExtrapolationSuspect) {
+            bodyRatio = upperLength / lowerLength;
+          }
         }
 
         const landmarkTypesToDraw = [
@@ -451,7 +477,12 @@ class ReferenceImageAnalyzer {
     );
   }
 
-  double? _estimateNegativeSpace(SegmentationMask mask) {
+  /// Public + [visibleForTesting] so it can be unit-tested directly with a
+  /// hand-built [SegmentationMask] instead of requiring a real on-device
+  /// segmentation pass. Behavior is unchanged from the former `_`-prefixed
+  /// version; this is a visibility-only change.
+  @visibleForTesting
+  double? estimateNegativeSpace(SegmentationMask mask) {
     final confidences = mask.confidences;
     if (confidences.isEmpty) return null;
 
@@ -467,7 +498,8 @@ class ReferenceImageAnalyzer {
     return (1.0 - subjectRatio).clamp(0.0, 1.0);
   }
 
-  double? _estimateSymmetry(
+  @visibleForTesting
+  double? estimateSymmetry(
     SegmentationMask mask,
     double? shoulderAngleDegrees,
   ) {
@@ -506,7 +538,8 @@ class ReferenceImageAnalyzer {
     return balance.clamp(0.0, 1.0);
   }
 
-  int? _estimateBackgroundClutter(img.Image decoded, SegmentationMask mask) {
+  @visibleForTesting
+  int? estimateBackgroundClutter(img.Image decoded, SegmentationMask mask) {
     final width = decoded.width;
     final height = decoded.height;
     final confidences = mask.confidences;
@@ -561,7 +594,8 @@ class ReferenceImageAnalyzer {
     return clutterScore.round();
   }
 
-  double? _estimateBrightness(img.Image decoded) {
+  @visibleForTesting
+  double? estimateBrightness(img.Image decoded) {
     final width = decoded.width;
     final height = decoded.height;
     if (width <= 0 || height <= 0) return null;

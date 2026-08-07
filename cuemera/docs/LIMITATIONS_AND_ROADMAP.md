@@ -9,15 +9,11 @@ All P0 and P1 items are resolved. What remains is grouped below by what it needs
 - **Measure the real wall-clock impact of `ReferenceImageAnalyzer.analyze()`'s concurrency.** Its five independent steps (pose, face, segmentation, decode, palette) now run via `Future.wait` instead of sequentially. Confirm on a physical device that this actually cuts latency — ML Kit's native platform-channel bindings may serialize these calls internally regardless of Dart-level concurrency, in which case the real-world win could be smaller than assumed.
 - **Verify `_evaluateFaceRoll`'s left/right direction in `reference_comparison_engine.dart`.** The phrase direction is derived from ML Kit's documented `headEulerAngleZ` sign convention, gated behind a `_faceRollDirectionIsMirrored` flag (currently `false`). This hasn't been confirmed on a physical device — tilt your head to a known side and check which phrase fires; flip the flag if it's backward. Now that the `subject_profile.dart`/`tracking_engine.dart` fix means this evaluator actually runs in production, getting the direction right matters more than when it was previously dead code.
 
-## 2. Needs test coverage / code audit
-
-- **Fix `SceneProfile.copyWith`'s null-swallowing bug — confirmed, not yet fixed.** Same `value ?? this.value` pattern as the now-fixed `SubjectProfile` bug, and it's actively triggered: `light_analyzer.dart` passes `null` for `lightDirectionDegrees`/`depthEstimate` when no clear signal exists that frame, and the `??` silently discards it — the stale value persists indefinitely instead of clearing, defeating `smoothScene`'s missing-streak debounce at the source exactly like the `SubjectProfile` bug did. `ReferenceProfile`'s `copyWith` has the same syntactic pattern but isn't actually triggered (built once via full constructor in `reference_image_analyzer.dart`, never incrementally patched). `ToleranceSettings`'s `copyWith` is fine as-is — all 4 fields are non-nullable, so there's no null-clearing case to hit. `DetectionThresholds`, `AlbumState`, and `AppColors` remain unaudited.
-
-## 3. Needs a product decision
+## 2. Needs a product decision
 
 - **Wire `ErrorReportingService` to a real remote sink.** It currently only retains the last 200 reports in memory (`FlutterError.onError`, `PlatformDispatcher.instance.onError`, `runZonedGuarded`, and every previously-silent `catch` all route through it) — reports don't survive app restart and never leave the device. A `TODO(remote-sink)` marks the extension point; needs a service chosen (Firebase Crashlytics, Sentry, custom backend) and an account/API keys before this can be wired up.
 
-## 4. Model-driven upgrade — the core "complete product" gap
+## 3. Model-driven upgrade — the core "complete product" gap
 
 The voice-coaching layer is still rule-based: `ReferenceComparisonEngine`'s `_evaluate*` methods pick from severity-tiered phrase banks (mild/moderate/strong) by threshold/sign logic — hand-authored strings, not a learned model. `score_calculator.dart`'s no-reference expression fallback is a literal if/else ladder. There is no LLM, no fine-tuned classifier, and no prompt/response pipeline anywhere in the codebase.
 

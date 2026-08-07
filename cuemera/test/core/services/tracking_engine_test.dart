@@ -213,6 +213,54 @@ void main() {
         expect(previous.faceAngleZDegrees, isNull); // now nulled out
       },
     );
+
+    // Previously untested — the 4 newly-smoothed fields shared the same
+    // missing-streak pattern, but only faceAngleZDegrees/mouthOpenRatio had
+    // a null-out case above. faceAngleXDegrees and eyeOpenRatio use the
+    // same `_faceAngleXMissingStreak`/`_eyeOpenRatioMissingStreak` counters
+    // per FILE_REFERENCE.md and deserve the same direct coverage rather
+    // than relying on the EMA tests above to imply it.
+    test(
+      'nulls out faceAngleXDegrees after it goes missing for debounceFrames in a row',
+      () {
+        final engine = TrackingEngine(
+          thresholds: DetectionThresholds.defaultValues.copyWith(
+            debounceFrames: 2,
+          ),
+        );
+        var previous = _subject(faceAngleXDegrees: 8.0);
+
+        previous = engine.smoothSubject(
+          _subject(faceAngleXDegrees: null),
+          previous,
+        );
+        expect(previous.faceAngleXDegrees, 8.0); // still within grace period
+
+        previous = engine.smoothSubject(
+          _subject(faceAngleXDegrees: null),
+          previous,
+        );
+        expect(previous.faceAngleXDegrees, isNull); // now nulled out
+      },
+    );
+
+    test(
+      'nulls out eyeOpenRatio after it goes missing for debounceFrames in a row',
+      () {
+        final engine = TrackingEngine(
+          thresholds: DetectionThresholds.defaultValues.copyWith(
+            debounceFrames: 2,
+          ),
+        );
+        var previous = _subject(eyeOpenRatio: 0.7);
+
+        previous = engine.smoothSubject(_subject(eyeOpenRatio: null), previous);
+        expect(previous.eyeOpenRatio, 0.7); // still within grace period
+
+        previous = engine.smoothSubject(_subject(eyeOpenRatio: null), previous);
+        expect(previous.eyeOpenRatio, isNull); // now nulled out
+      },
+    );
   });
 
   group('smoothScene', () {
