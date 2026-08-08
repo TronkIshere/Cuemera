@@ -62,13 +62,17 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
   int generationEpoch = 0;
 
   TtsEmphasis emphasisFor(severityBand) {
-    switch (severityBand.name) {
-      case 'strong':
-        return TtsEmphasis.strong;
-      case 'moderate':
-        return TtsEmphasis.moderate;
-      default:
-        return TtsEmphasis.mild;
+    try {
+      switch (severityBand.name) {
+        case 'strong':
+          return TtsEmphasis.strong;
+        case 'moderate':
+          return TtsEmphasis.moderate;
+        default:
+          return TtsEmphasis.mild;
+      }
+    } catch (_) {
+      return TtsEmphasis.mild;
     }
   }
 

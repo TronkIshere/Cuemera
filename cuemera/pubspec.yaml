@@ -38,15 +38,10 @@ dependencies:
   sherpa_onnx: ^1.12.11   # kiểm tra version mới nhất trên pub.dev
   audioplayers: ^6.0.0
 
-assets:
-  - assets/images/
-
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path:
-    - "assets/images/logo.png"
-    - "assets/models/vits-en/"
+  image_path: "assets/images/logo.png"
 
 
 dev_dependencies:
@@ -58,3 +53,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/models/vits-en/
