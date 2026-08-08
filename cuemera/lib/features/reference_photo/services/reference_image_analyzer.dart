@@ -229,8 +229,8 @@ class ReferenceImageAnalyzer {
           // computing it from a bad position.
           final ankleExtrapolationSuspect =
               torsoScale != null &&
-              torsoScale > 0 &&
-              lowerLength > _maxExtremityExtrapolationMultiplier * torsoScale;
+                  torsoScale > 0 &&
+                  lowerLength > _maxExtremityExtrapolationMultiplier * torsoScale;
           if (lowerLength > 0 && !ankleExtrapolationSuspect) {
             bodyRatio = upperLength / lowerLength;
           }
@@ -436,8 +436,19 @@ class ReferenceImageAnalyzer {
     double? imageHeight;
     try {
       final bytes = await File(imagePath).readAsBytes();
-      decoded = img.decodeImage(bytes);
-      if (decoded != null) {
+      final rawDecoded = img.decodeImage(bytes);
+      if (rawDecoded != null) {
+        // img.decodeImage() reads raw sensor-orientation pixels and does
+        // not apply the file's EXIF orientation tag on its own, while
+        // InputImage.fromFilePath() (used for pose/face detection above)
+        // does apply it. Without baking orientation here, decoded.width/
+        // height (and therefore ReferenceProfile.imageWidth/imageHeight,
+        // which the painter uses to scale landmark points) can end up in
+        // a different coordinate space than the landmarks themselves —
+        // landmarks come out correct but get mapped onto the wrong
+        // canvas dimensions, which is what produced the garbled skeleton
+        // lines on EXIF-rotated photos.
+        decoded = img.bakeOrientation(rawDecoded);
         imageWidth = decoded.width.toDouble();
         imageHeight = decoded.height.toDouble();
       }
@@ -547,11 +558,11 @@ class ReferenceImageAnalyzer {
 
   @visibleForTesting
   int? estimateBackgroundClutter(
-    img.Image decoded, {
-    required int maskWidth,
-    required int maskHeight,
-    required List<double> confidences,
-  }) {
+      img.Image decoded, {
+        required int maskWidth,
+        required int maskHeight,
+        required List<double> confidences,
+      }) {
     final width = decoded.width;
     final height = decoded.height;
     if (width <= 0 || height <= 0 || confidences.isEmpty) return null;

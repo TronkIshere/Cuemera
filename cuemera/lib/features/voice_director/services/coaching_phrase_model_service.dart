@@ -47,7 +47,7 @@ class CoachingPhraseModelService {
           .withProgress((progress) => onProgress?.call(progress))
           .install();
 
-      _model = await FlutterGemma.getActiveModel(maxTokens: 128);
+      _model = await FlutterGemma.getActiveModel(maxTokens: 512);
     } finally {
       _installing = false;
     }
