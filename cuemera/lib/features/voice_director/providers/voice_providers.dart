@@ -34,10 +34,19 @@ final nextActionProvider = Provider<PriorityAction?>((ref) {
   );
 });
 
-final coachingAiUnavailableProvider = StateProvider<bool>((ref) => false);
+// coachingAiUnavailableProvider, lastPhraseGenerationLatencyMs, and
+// lastPhraseGenerationSucceeded now live in coaching_phrase_model_providers.dart
+// so ai_coaching_providers.dart can reset the first one on a manual retry
+// without a circular import.
 
-int? lastPhraseGenerationLatencyMs;
-bool? lastPhraseGenerationSucceeded;
+/// The phrase actually spoken for the current decision — set at the same
+/// point `ttsService.speak()` is called, whether that's the AI-generated
+/// phrase or the fallback. `camera_screen.dart`'s on-screen coaching chip
+/// watches this instead of `nextActionProvider`'s raw `action.phrase`, so
+/// what's shown always matches what's said (previously the chip showed
+/// the rule-based phrase even when AI coaching successfully spoke a
+/// different one).
+final displayedCoachingPhraseProvider = StateProvider<String?>((ref) => null);
 
 const _generationTimeout = Duration(seconds: 3);
 const _maxConsecutiveFailuresBeforeUnavailable = 3;
@@ -61,6 +70,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
         !aiCoachingEnabled ||
         phraseModel == null ||
         !phraseModel.isReady) {
+      ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
       ttsService.speak(action.phrase);
       return;
     }
@@ -88,6 +98,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
 
     if (generated != null) {
       consecutiveFailures = 0;
+      ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
       ttsService.speak(generated);
       return;
     }
@@ -96,6 +107,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
     if (consecutiveFailures >= _maxConsecutiveFailuresBeforeUnavailable) {
       ref.read(coachingAiUnavailableProvider.notifier).state = true;
     }
+    ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
     ttsService.speak(action.phrase);
   }
 

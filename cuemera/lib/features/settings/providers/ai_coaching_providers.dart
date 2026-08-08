@@ -14,6 +14,7 @@ class AiCoachingSettings {
     required this.isInstalling,
     required this.installProgress,
     required this.installError,
+    required this.aiUnavailable,
   });
 
   static const initial = AiCoachingSettings(
@@ -21,6 +22,7 @@ class AiCoachingSettings {
     isInstalling: false,
     installProgress: null,
     installError: null,
+    aiUnavailable: false,
   );
 
   final bool enabled;
@@ -28,24 +30,35 @@ class AiCoachingSettings {
   final int? installProgress;
   final String? installError;
 
+  /// Mirrors `coachingAiUnavailableProvider` — true once generation has
+  /// failed repeatedly during this session and coaching has silently
+  /// fallen back to the phrase bank. Toggling `enabled` off then on again
+  /// resets it (see `setEnabled`) as a manual retry.
+  final bool aiUnavailable;
+
   AiCoachingSettings copyWith({
     bool? enabled,
     bool? isInstalling,
     int? installProgress,
     String? installError,
     bool clearError = false,
+    bool? aiUnavailable,
   }) {
     return AiCoachingSettings(
       enabled: enabled ?? this.enabled,
       isInstalling: isInstalling ?? this.isInstalling,
       installProgress: installProgress ?? this.installProgress,
       installError: clearError ? null : (installError ?? this.installError),
+      aiUnavailable: aiUnavailable ?? this.aiUnavailable,
     );
   }
 }
 
 class AiCoachingSettingsNotifier extends StateNotifier<AiCoachingSettings> {
   AiCoachingSettingsNotifier(this._ref) : super(AiCoachingSettings.initial) {
+    _ref.listen<bool>(coachingAiUnavailableProvider, (previous, next) {
+      state = state.copyWith(aiUnavailable: next);
+    });
     _loadPersisted();
   }
 
@@ -67,7 +80,14 @@ class AiCoachingSettingsNotifier extends StateNotifier<AiCoachingSettings> {
     final memoryService = await _ref.read(memoryServiceProvider.future);
     await memoryService.setHabit(_aiCoachingEnabledKey, value);
     state = state.copyWith(enabled: value, clearError: true);
-    if (value) await _install();
+    if (value) {
+      // Manual (re-)enable doubles as the retry signal: give AI coaching
+      // a fresh shot even if it tripped coachingAiUnavailableProvider
+      // earlier this session — otherwise the only way to recover was a
+      // full app restart.
+      _ref.read(coachingAiUnavailableProvider.notifier).state = false;
+      await _install();
+    }
   }
 
   Future<void> _install() async {

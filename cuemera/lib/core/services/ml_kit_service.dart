@@ -1,9 +1,11 @@
 // core/services/ml_kit_service.dart
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show DeviceOrientation;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
@@ -18,6 +20,13 @@ class MlKitAnalysisResult {
   final List<Face>? faces;
   final SegmentationMask? segmentationMask;
 }
+
+const Map<DeviceOrientation, int> _androidRotationCompensation = {
+  DeviceOrientation.portraitUp: 0,
+  DeviceOrientation.landscapeLeft: 90,
+  DeviceOrientation.portraitDown: 180,
+  DeviceOrientation.landscapeRight: 270,
+};
 
 class MlKitService {
   final PoseDetector _poseDetector = PoseDetector(
@@ -47,15 +56,43 @@ class MlKitService {
 
   Stream<bool> get unavailableStream => _availabilityController.stream;
 
+  @visibleForTesting
+  InputImageRotation? rotationFor(
+    CameraDescription description,
+    DeviceOrientation deviceOrientation,
+  ) {
+    if (Platform.isIOS) {
+      return InputImageRotationValue.fromRawValue(
+        description.sensorOrientation,
+      );
+    }
+
+    final deviceRotation = _androidRotationCompensation[deviceOrientation];
+    if (deviceRotation == null) return null;
+
+    final int rotationCompensation;
+    if (description.lensDirection == CameraLensDirection.front) {
+      rotationCompensation =
+          (description.sensorOrientation + deviceRotation) % 360;
+    } else {
+      rotationCompensation =
+          (description.sensorOrientation - deviceRotation + 360) % 360;
+    }
+    return InputImageRotationValue.fromRawValue(rotationCompensation);
+  }
+
   Future<void> processImage(
     CameraImage image,
     CameraDescription description,
-    InputImageRotation rotation,
+    DeviceOrientation deviceOrientation,
   ) async {
     if (_busy) return;
     _busy = true;
 
     try {
+      final rotation = rotationFor(description, deviceOrientation);
+      if (rotation == null) return;
+
       final inputImage = _toInputImage(image, rotation);
       if (inputImage == null) return;
 

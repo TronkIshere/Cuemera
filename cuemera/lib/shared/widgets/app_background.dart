@@ -25,9 +25,11 @@ class AppBackground extends StatelessWidget {
           child: RepaintBoundary(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final size = Size(constraints.maxWidth, constraints.maxHeight);
                 return CustomPaint(
-                  size: Size(constraints.maxWidth, constraints.maxHeight),
+                  size: size,
                   painter: _BackgroundPainter(
+                    size: size,
                     background: colors.background,
                     surface: colors.surface,
                     accent: colors.accent,
@@ -46,21 +48,21 @@ class AppBackground extends StatelessWidget {
 
 class _BackgroundPainter extends CustomPainter {
   _BackgroundPainter({
+    required this.size,
     required this.background,
     required this.surface,
     required this.accent,
     required this.brightness,
   });
 
+  final Size size;
   final Color background;
   final Color surface;
   final Color accent;
   final Brightness brightness;
-  Size? _lastSize;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _lastSize = size;
     final isLandscape = size.width > size.height;
 
     _paintBaseGradient(canvas, size);
@@ -290,7 +292,6 @@ class _BackgroundPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _BackgroundPainter oldDelegate) {
-    return oldDelegate.brightness != brightness ||
-        oldDelegate._lastSize != _lastSize;
+    return oldDelegate.brightness != brightness || oldDelegate.size != size;
   }
 }

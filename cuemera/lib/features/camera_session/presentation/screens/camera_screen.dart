@@ -133,23 +133,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final controller = cameraService.controller;
     if (controller == null) return;
 
-    final sensorOrientation = controller.description.sensorOrientation;
-    // Front-facing sensors are mounted mirrored relative to back-facing
-    // ones, so ML Kit needs a different rotation-compensation formula for
-    // the front camera — using the back-camera formula for both (as
-    // before) rotates front-camera landmarks incorrectly, which showed up
-    // as persistently wrong shoulder/pose readings when using the front
-    // (selfie) camera specifically.
-    final rotationCompensation =
-        controller.description.lensDirection == CameraLensDirection.front
-        ? (360 - sensorOrientation) % 360
-        : sensorOrientation;
-
-    final rotation =
-        InputImageRotationValue.fromRawValue(rotationCompensation) ??
-        InputImageRotation.rotation0deg;
-
-    mlKitService.processImage(image, controller.description, rotation);
+    mlKitService.processImage(
+      image,
+      controller.description,
+      controller.value.deviceOrientation,
+    );
   }
 
   Future<void> _performCapture() async {
@@ -538,6 +526,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             builder: (context, ref, _) {
               final nextAction = ref.watch(nextActionProvider);
               if (nextAction == null) return const SizedBox.shrink();
+              // Shows whatever was actually spoken (AI-generated or
+              // fallback) rather than nextAction.phrase directly — those
+              // two can differ once AI coaching succeeds, and showing the
+              // rule-based text while a different phrase plays out loud
+              // was a real mismatch.
+              final displayedPhrase =
+                  ref.watch(displayedCoachingPhraseProvider) ??
+                  nextAction.phrase;
               return Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -550,7 +546,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                     border: Border.all(color: colors.accent, width: 1.5),
                   ),
                   child: Text(
-                    nextAction.phrase,
+                    displayedPhrase,
                     style: AppTypography.body(colors).copyWith(
                       color: colors.accent,
                       fontWeight: FontWeight.w600,
