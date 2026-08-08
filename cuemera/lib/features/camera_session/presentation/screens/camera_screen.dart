@@ -10,9 +10,9 @@ import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentatio
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/services/app_tts_service.dart';
 import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
-import '../../../../core/services/tts_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
 import '../../../../shared/widgets/score_badge.dart';
 import '../../../album/domain/models/shot.dart';
@@ -147,7 +147,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     if (!mounted) return;
 
     if (imagePath != null) {
-      ref.read(ttsServiceProvider).speak('Photo captured.');
+      ref.read(appTtsServiceProvider).speak('Photo captured.');
     }
 
     if (cameraService.lastGallerySaveSucceeded == false) {

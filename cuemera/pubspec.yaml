@@ -35,13 +35,19 @@ dependencies:
   flutter_gemma: ^1.5.2
   flutter_gemma_mediapipe: ^1.0.0
 
+  sherpa_onnx: ^1.12.11   # kiểm tra version mới nhất trên pub.dev
+  audioplayers: ^6.0.0
+
 assets:
   - assets/images/
 
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo.png"
+  image_path:
+    - "assets/images/logo.png"
+    - "assets/models/vits-en/"
+
 
 dev_dependencies:
   flutter_test:

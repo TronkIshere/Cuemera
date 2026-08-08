@@ -4,7 +4,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/tts_service.dart';
+import '../../../core/services/app_tts_service.dart';
+import '../../../core/services/sherpa_tts_service.dart' show TtsEmphasis;
 import '../../reference_photo/providers/reference_providers.dart';
 import '../../scene_analysis/providers/scene_providers.dart';
 import '../../settings/providers/ai_coaching_providers.dart';
@@ -52,7 +53,7 @@ const _generationTimeout = Duration(seconds: 3);
 const _maxConsecutiveFailuresBeforeUnavailable = 3;
 
 final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
-  final ttsService = ref.watch(ttsServiceProvider);
+  final ttsService = ref.watch(appTtsServiceProvider);
   final phraseModel = ref.watch(coachingPhraseModelServiceProvider);
 
   String? lastDedupeKey;
@@ -60,7 +61,19 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
   int consecutiveFailures = 0;
   int generationEpoch = 0;
 
+  TtsEmphasis emphasisFor(severityBand) {
+    switch (severityBand.name) {
+      case 'strong':
+        return TtsEmphasis.strong;
+      case 'moderate':
+        return TtsEmphasis.moderate;
+      default:
+        return TtsEmphasis.mild;
+    }
+  }
+
   Future<void> speakForDecision(PriorityAction action, int epoch) async {
+    final emphasis = emphasisFor(action.decision.severityBand);
     final aiUnavailable = ref.read(coachingAiUnavailableProvider);
     final aiCoachingEnabled = ref.read(
       aiCoachingSettingsProvider.select((s) => s.enabled),
@@ -71,7 +84,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
         phraseModel == null ||
         !phraseModel.isReady) {
       ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
-      ttsService.speak(action.phrase);
+      ttsService.speak(action.phrase, emphasis: emphasis);
       return;
     }
 
@@ -99,7 +112,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
     if (generated != null) {
       consecutiveFailures = 0;
       ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
-      ttsService.speak(generated);
+      ttsService.speak(generated, emphasis: emphasis);
       return;
     }
 
@@ -108,7 +121,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
       ref.read(coachingAiUnavailableProvider.notifier).state = true;
     }
     ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
-    ttsService.speak(action.phrase);
+    ttsService.speak(action.phrase, emphasis: emphasis);
   }
 
   ref.listen<PriorityAction?>(nextActionProvider, (previous, next) {
