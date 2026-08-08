@@ -12,6 +12,7 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
+import '../../../../core/services/tts_service.dart';
 import '../../../../shared/widgets/primary_button.dart';
 import '../../../../shared/widgets/score_badge.dart';
 import '../../../album/domain/models/shot.dart';
@@ -144,6 +145,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final cameraService = ref.read(cameraServiceProvider);
     final imagePath = await cameraService.capture();
     if (!mounted) return;
+
+    if (imagePath != null) {
+      ref.read(ttsServiceProvider).speak('Photo captured.');
+    }
 
     if (cameraService.lastGallerySaveSucceeded == false) {
       ref.read(gallerySaveWarningProvider.notifier).state =
