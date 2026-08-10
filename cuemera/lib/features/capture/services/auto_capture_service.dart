@@ -27,10 +27,23 @@ class AutoCaptureService {
     final faceOk = _faceOk(subject, reference, tolerance);
     final facePitchOk = _facePitchOk(subject, reference, tolerance);
     final faceRollOk = _faceRollOk(subject, reference, tolerance);
+    final bodyRatioOk = _bodyRatioOk(subject, reference, tolerance);
+    final mouthOpenOk = _mouthOpenOk(subject, reference, tolerance);
+    final negativeSpaceOk = _negativeSpaceOk(scene, reference, tolerance);
+    final symmetryOk = _symmetryOk(scene, reference, tolerance);
     final backgroundOk = _backgroundOk(scene, reference, tolerance, thresholds);
 
-    if (!shoulderOk || !faceOk || !facePitchOk || !faceRollOk || !backgroundOk)
+    if (!shoulderOk ||
+        !faceOk ||
+        !facePitchOk ||
+        !faceRollOk ||
+        !bodyRatioOk ||
+        !mouthOpenOk ||
+        !negativeSpaceOk ||
+        !symmetryOk ||
+        !backgroundOk) {
       return false;
+    }
 
     if (trackingProgress < thresholds.minTrackingProgressForCapture) {
       return false;
@@ -60,6 +73,10 @@ class AutoCaptureService {
     final faceOk = _faceOk(subject, reference, tolerance);
     final facePitchOk = _facePitchOk(subject, reference, tolerance);
     final faceRollOk = _faceRollOk(subject, reference, tolerance);
+    final bodyRatioOk = _bodyRatioOk(subject, reference, tolerance);
+    final mouthOpenOk = _mouthOpenOk(subject, reference, tolerance);
+    final negativeSpaceOk = _negativeSpaceOk(scene, reference, tolerance);
+    final symmetryOk = _symmetryOk(scene, reference, tolerance);
     final backgroundOk = _backgroundOk(scene, reference, tolerance, thresholds);
     final cooldownOk =
         _lastCapture == null ||
@@ -75,6 +92,10 @@ class AutoCaptureService {
       'faceAngle': faceOk,
       'facePitch': facePitchOk,
       'faceRoll': faceRollOk,
+      'bodyRatio': bodyRatioOk,
+      'mouthOpen': mouthOpenOk,
+      'negativeSpace': negativeSpaceOk,
+      'symmetry': symmetryOk,
       'backgroundClutter': backgroundOk,
       'trackingProgress':
           trackingProgress >= thresholds.minTrackingProgressForCapture,
@@ -138,6 +159,81 @@ class AutoCaptureService {
 
     final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _bodyRatioOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.bodyRatio;
+    final referenceValue = reference.bodyRatio;
+    if (subjectValue == null || referenceValue == null) return true;
+
+    final deviation = ComparisonMath.relativeDeviation(
+      subjectValue,
+      referenceValue,
+    );
+    if (deviation == null) return true;
+
+    final threshold = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _mouthOpenOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.mouthOpenRatio;
+    final referenceValue = reference.mouthOpenRatio;
+    if (subjectValue == null || referenceValue == null) return true;
+
+    final deviation = ComparisonMath.relativeDeviation(
+      subjectValue,
+      referenceValue,
+    );
+    if (deviation == null) return true;
+
+    final threshold = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _negativeSpaceOk(
+    SceneProfile scene,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final referenceValue = reference.negativeSpaceScore;
+    if (referenceValue == null) return true;
+
+    final deviation = ComparisonMath.deviation(
+      scene.negativeSpaceScore,
+      referenceValue,
+    );
+    final threshold = ComparisonMath.thresholdForComposition(
+      tolerance.compositionTolerance,
+    );
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _symmetryOk(
+    SceneProfile scene,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final referenceValue = reference.symmetryScore;
+    if (referenceValue == null) return true;
+
+    final deviation = (referenceValue - scene.symmetryScore).clamp(0.0, 1.0);
+    final threshold = ComparisonMath.thresholdForComposition(
+      tolerance.compositionTolerance,
+    );
     return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
 

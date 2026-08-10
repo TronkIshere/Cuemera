@@ -6,6 +6,7 @@ enum CoachingAttribute {
   shoulderAngle,
   facePitch,
   faceRoll,
+  faceYaw,
   bodyRatio,
   mouthOpen,
   eyeOpen,

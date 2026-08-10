@@ -18,6 +18,9 @@ class ReferenceComparisonEngine {
   static const double _moderateSeverityCeiling =
       CoachingDecision.moderateSeverityCeiling;
   static const bool _faceRollDirectionIsMirrored = false;
+  static const bool _faceYawDirectionIsMirrored = false;
+
+  int _tierRotation = 0;
 
   String _tieredPhrase(
     double normalizedSeverity, {
@@ -30,20 +33,22 @@ class ReferenceComparisonEngine {
     return strong;
   }
 
-  PriorityAction? _pickWorst(List<_AttributeEvaluation> tier) {
+  _AttributeEvaluation? _worst(List<_AttributeEvaluation> tier) {
     final exceeding = tier
         .where((candidate) => candidate.deviationExceedsThreshold)
         .toList();
     if (exceeding.isEmpty) return null;
 
     exceeding.sort((a, b) => b.severity.compareTo(a.severity));
-    final worst = exceeding.first;
+    return exceeding.first;
+  }
 
+  PriorityAction _toPriorityAction(_AttributeEvaluation evaluation) {
     return PriorityAction(
-      phrase: worst.phrase,
-      severity: worst.severity,
+      phrase: evaluation.phrase,
+      severity: evaluation.severity,
       sourceLayer: 'reference_comparison_engine',
-      decision: worst.decision,
+      decision: evaluation.decision,
     );
   }
 
@@ -75,6 +80,10 @@ class ReferenceComparisonEngine {
     addIfPresent(
       poseAndFaceTier,
       _evaluateFaceRoll(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateFaceYaw(subject, reference, tolerance),
     );
     addIfPresent(
       poseAndFaceTier,
@@ -113,9 +122,25 @@ class ReferenceComparisonEngine {
     addIfPresent(lightingTier, _evaluateWarmth(scene, reference, tolerance));
     addIfPresent(lightingTier, _evaluateHue(scene, reference, tolerance));
 
-    return _pickWorst(poseAndFaceTier) ??
-        _pickWorst(compositionTier) ??
-        _pickWorst(lightingTier);
+    final tiers = [poseAndFaceTier, compositionTier, lightingTier];
+    final worstPerTier = tiers.map(_worst).toList();
+
+    for (final worst in worstPerTier) {
+      if (worst != null &&
+          worst.decision.severityBand != CoachingSeverityBand.mild) {
+        return _toPriorityAction(worst);
+      }
+    }
+
+    for (var i = 0; i < worstPerTier.length; i++) {
+      final idx = (_tierRotation + i) % worstPerTier.length;
+      final candidate = worstPerTier[idx];
+      if (candidate != null) {
+        _tierRotation = (idx + 1) % worstPerTier.length;
+        return _toPriorityAction(candidate);
+      }
+    }
+    return null;
   }
 
   _AttributeEvaluation? _evaluateShoulderAngle(
@@ -273,6 +298,62 @@ class ReferenceComparisonEngine {
         direction: subjectTiltedMoreTowardRight
             ? CoachingDirection.right
             : CoachingDirection.left,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
+    );
+  }
+
+  _AttributeEvaluation? _evaluateFaceYaw(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.faceAngleDegrees;
+    final referenceValue = reference.faceAngleDegrees;
+    if (subjectValue == null || referenceValue == null) return null;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForPose,
+    );
+    final thresholdForPose = ComparisonMath.thresholdForPose(
+      tolerance.poseTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForPose,
+    );
+
+    final subjectNeedsToTurnLeft = _faceYawDirectionIsMirrored
+        ? subjectValue < referenceValue
+        : subjectValue > referenceValue;
+
+    final phrase = subjectNeedsToTurnLeft
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Turn your face slightly to your left',
+            moderate: 'Turn your face more to your left, like the reference',
+            strong:
+                "Turn your face a lot more to your left — you're angled well past the reference",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Turn your face slightly to your right',
+            moderate: 'Turn your face more to your right, like the reference',
+            strong:
+                "Turn your face a lot more to your right — you're angled well past the reference",
+          );
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.faceYaw,
+        direction: subjectNeedsToTurnLeft
+            ? CoachingDirection.left
+            : CoachingDirection.right,
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
