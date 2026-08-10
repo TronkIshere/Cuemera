@@ -12,7 +12,7 @@ class TtsService {
     await _tts.setSpeechRate(0.55);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
-    await _tts.awaitSpeakCompletion(false);
+    await _tts.awaitSpeakCompletion(true);
     _ready = true;
   }
 

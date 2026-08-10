@@ -10,10 +10,33 @@ class AppTtsService {
   final SherpaTtsService sherpa;
   final TtsService fallback;
 
+  Future<void> _queue = Future.value();
+  bool _speaking = false;
+
+  bool get isSpeaking => _speaking;
+
   Future<void> speak(
     String phrase, {
     TtsEmphasis emphasis = TtsEmphasis.mild,
     bool force = false,
+  }) {
+    final previous = _queue;
+    final next = previous.then((_) async {
+      _speaking = true;
+      try {
+        await _speakNow(phrase, emphasis: emphasis, force: force);
+      } finally {
+        _speaking = false;
+      }
+    });
+    _queue = next;
+    return next;
+  }
+
+  Future<void> _speakNow(
+    String phrase, {
+    required TtsEmphasis emphasis,
+    required bool force,
   }) async {
     if (sherpa.isReady) {
       try {

@@ -1,4 +1,5 @@
 // core/services/sherpa_tts_service.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -225,7 +226,23 @@ class SherpaTtsService {
       debugPrint('SherpaTtsService.speak(): wrote $size bytes to $wavPath');
 
       await _player.stop();
+      final completer = Completer<void>();
+      void finish() {
+        if (!completer.isCompleted) completer.complete();
+      }
+
+      late final StreamSubscription<void> completeSub;
+      late final StreamSubscription<PlayerState> stateSub;
+      completeSub = _player.onPlayerComplete.listen((_) => finish());
+      stateSub = _player.onPlayerStateChanged.listen((state) {
+        if (state == PlayerState.stopped || state == PlayerState.disposed) {
+          finish();
+        }
+      });
       await _player.play(DeviceFileSource(wavPath));
+      await completer.future;
+      await completeSub.cancel();
+      await stateSub.cancel();
     } catch (e, st) {
       debugPrint('SherpaTtsService.speak() FAILED: $e');
       debugPrint('$st');

@@ -1,6 +1,7 @@
 // features/capture/providers/capture_providers.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/app_tts_service.dart';
 import '../../../core/services/camera_service.dart';
 import '../../album/domain/models/album_state.dart';
 import '../../album/domain/models/shot.dart';
@@ -22,6 +23,8 @@ final gallerySaveWarningProvider = StateProvider<String?>((ref) => null);
 
 const gallerySaveFailedMessage =
     "Couldn't save to your gallery — the photo is still in your album.";
+
+const holdStillPhrase = 'Hold still.';
 
 final autoCaptureServiceProvider = Provider<AutoCaptureService>((ref) {
   return AutoCaptureService();
@@ -52,36 +55,46 @@ final shouldCaptureProvider = Provider<bool>((ref) {
 final autoCaptureProvider = Provider<void>((ref) {
   final autoCaptureService = ref.watch(autoCaptureServiceProvider);
   final cameraService = ref.watch(cameraServiceProvider);
+  final ttsService = ref.watch(appTtsServiceProvider);
+
+  var captureInFlight = false;
 
   ref.listen<bool>(shouldCaptureProvider, (previous, shouldCapture) async {
-    if (shouldCapture != true) return;
+    if (shouldCapture != true || captureInFlight) return;
+    captureInFlight = true;
 
-    final referenceAsync = ref.read(referenceProfileProvider);
-    final reference = referenceAsync.valueOrNull;
-    if (reference == null) return;
-    final tolerance = ref.read(toleranceSettingsProvider);
+    try {
+      final referenceAsync = ref.read(referenceProfileProvider);
+      final reference = referenceAsync.valueOrNull;
+      if (reference == null) return;
+      final tolerance = ref.read(toleranceSettingsProvider);
 
-    await autoCaptureService.triggerCapture();
+      await autoCaptureService.triggerCapture();
 
-    final imagePath = await cameraService.capture();
-    if (cameraService.lastGallerySaveSucceeded == false) {
-      ref.read(gallerySaveWarningProvider.notifier).state =
-          gallerySaveFailedMessage;
+      await ttsService.speak(holdStillPhrase, force: true);
+
+      final imagePath = await cameraService.capture();
+      if (cameraService.lastGallerySaveSucceeded == false) {
+        ref.read(gallerySaveWarningProvider.notifier).state =
+            gallerySaveFailedMessage;
+      }
+
+      final subject = ref.read(subjectProfileProvider);
+      final scene = ref.read(sceneProfileProvider);
+
+      final shot = buildShotFromCapture(
+        imagePath: imagePath,
+        subject: subject,
+        scene: scene,
+        reference: reference,
+        tolerance: tolerance,
+        shotType: ref.read(selectedShotTypeProvider),
+      );
+
+      ref.read(capturedShotProvider.notifier).state = shot;
+    } finally {
+      captureInFlight = false;
     }
-
-    final subject = ref.read(subjectProfileProvider);
-    final scene = ref.read(sceneProfileProvider);
-
-    final shot = buildShotFromCapture(
-      imagePath: imagePath,
-      subject: subject,
-      scene: scene,
-      reference: reference,
-      tolerance: tolerance,
-      shotType: ref.read(selectedShotTypeProvider),
-    );
-
-    ref.read(capturedShotProvider.notifier).state = shot;
   });
 });
 

@@ -134,6 +134,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
 
     debounceTimer?.cancel();
     debounceTimer = Timer(const Duration(milliseconds: 400), () {
+      if (ttsService.isSpeaking) return;
       lastDedupeKey = next.decision.dedupeKey;
       generationEpoch++;
       speakForDecision(next, generationEpoch);
