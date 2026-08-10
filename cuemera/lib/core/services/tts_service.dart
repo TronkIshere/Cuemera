@@ -16,8 +16,14 @@ class TtsService {
     _ready = true;
   }
 
-  Future<void> speak(String phrase) async {
-    if (!_ready || phrase.isEmpty || phrase == _lastPhrase) return;
+  /// [force] bypasses the same-phrase dedupe. Use this for one-off
+  /// confirmations (e.g. "Photo captured.") that repeat the exact same
+  /// text every time — the dedupe only makes sense for continuous
+  /// per-frame coaching phrases, where saying the same cue twice in a
+  /// row with unchanged conditions is the thing we're trying to avoid.
+  Future<void> speak(String phrase, {bool force = false}) async {
+    if (!_ready || phrase.isEmpty) return;
+    if (!force && phrase == _lastPhrase) return;
     _lastPhrase = phrase;
     await _tts.stop();
     await _tts.speak(phrase);

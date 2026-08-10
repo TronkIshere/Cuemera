@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -50,20 +51,55 @@ class SherpaTtsService {
 
       _tts = sherpa_onnx.OfflineTts(config);
       _ready = true;
-    } catch (_) {
+      debugPrint(
+        'SherpaTtsService: init OK, isReady=true (modelDir=$modelDir)',
+      );
+    } catch (e, st) {
+      debugPrint('SherpaTtsService.init() FAILED: $e');
+      debugPrint('$st');
       _ready = false;
     }
   }
 
+  /// Extracts the bundled VITS assets to a writable directory.
+  ///
+  /// Verifies the three files/dirs sherpa_onnx actually needs are present
+  /// on disk before trusting a leftover ".extracted" marker from a prior
+  /// (possibly incomplete) run — a stale marker used to cause every
+  /// subsequent launch to silently skip re-extraction even after fixing
+  /// pubspec.yaml's asset list, since the check used to be marker-only.
   Future<String> _ensureModelExtracted() async {
     final supportDir = await getApplicationSupportDirectory();
     final targetDir = Directory('${supportDir.path}/vits-en');
     final marker = File('${targetDir.path}/.extracted');
-    if (await marker.exists()) return targetDir.path;
+
+    if (await marker.exists() && await _looksComplete(targetDir)) {
+      debugPrint(
+        'SherpaTtsService: using previously extracted model at ${targetDir.path}',
+      );
+      return targetDir.path;
+    }
+
+    debugPrint(
+      'SherpaTtsService: (re)extracting model assets to ${targetDir.path}',
+    );
 
     final manifestJson = await rootBundle.loadString('AssetManifest.json');
     final manifest = json.decode(manifestJson) as Map<String, dynamic>;
-    final assetPaths = manifest.keys.where((k) => k.startsWith(assetPrefix));
+    final assetPaths = manifest.keys
+        .where((k) => k.startsWith(assetPrefix))
+        .toList();
+
+    debugPrint(
+      'SherpaTtsService: found ${assetPaths.length} bundled asset(s) under '
+      '"$assetPrefix" in AssetManifest.json',
+    );
+    if (assetPaths.isEmpty) {
+      throw StateError(
+        'No assets found under "$assetPrefix" — check that pubspec.yaml '
+        'actually declares this path under flutter: > assets:',
+      );
+    }
 
     for (final assetPath in assetPaths) {
       final data = await rootBundle.load(assetPath);
@@ -73,9 +109,47 @@ class SherpaTtsService {
       await outFile.writeAsBytes(data.buffer.asUint8List());
     }
 
+    if (!await _looksComplete(targetDir)) {
+      throw StateError(
+        'Extraction finished but required files are still missing under '
+        '${targetDir.path} — most likely "espeak-ng-data/" (or a nested '
+        'subdirectory of it) is missing from pubspec.yaml\'s assets: list. '
+        'Flutter does not bundle nested directories recursively; each '
+        'subdirectory needs its own explicit line.',
+      );
+    }
+
     await marker.create(recursive: true);
     await marker.writeAsString('done');
     return targetDir.path;
+  }
+
+  /// True only if the files sherpa_onnx actually needs are present.
+  /// Extend this list if your model uses a lexicon/dict dir too.
+  Future<bool> _looksComplete(Directory targetDir) async {
+    final requiredPaths = [
+      '${targetDir.path}/model.onnx',
+      '${targetDir.path}/tokens.txt',
+      '${targetDir.path}/espeak-ng-data',
+    ];
+    for (final p in requiredPaths) {
+      final isDir = p.endsWith('espeak-ng-data');
+      final exists = isDir
+          ? await Directory(p).exists()
+          : await File(p).exists();
+      if (!exists) {
+        debugPrint('SherpaTtsService: missing required path: $p');
+        return false;
+      }
+      if (isDir) {
+        final hasFiles = await Directory(p).list().isEmpty.then((e) => !e);
+        if (!hasFiles) {
+          debugPrint('SherpaTtsService: $p exists but is empty');
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   double _speedFor(TtsEmphasis emphasis) {
@@ -110,36 +184,53 @@ class SherpaTtsService {
     return '$withoutPeriod!';
   }
 
+  /// [force] bypasses the same-phrase dedupe — see TtsService.speak() for
+  /// why this matters for one-off confirmations vs. per-frame coaching.
   Future<void> speak(
     String phrase, {
     TtsEmphasis emphasis = TtsEmphasis.mild,
+    bool force = false,
   }) async {
-    if (!_ready || _tts == null || phrase.isEmpty || phrase == _lastPhrase) {
-      return;
-    }
+    if (!_ready || _tts == null || phrase.isEmpty) return;
+    if (!force && phrase == _lastPhrase) return;
     _lastPhrase = phrase;
 
-    final genConfig = sherpa_onnx.OfflineTtsGenerationConfig(
-      sid: 0,
-      speed: _speedFor(emphasis),
-      silenceScale: _silenceScaleFor(emphasis),
-    );
-    final audio = _tts!.generateWithConfig(
-      text: _withEmphasisMarkup(phrase, emphasis),
-      config: genConfig,
-    );
-    if (audio.samples.isEmpty) return;
+    try {
+      final genConfig = sherpa_onnx.OfflineTtsGenerationConfig(
+        sid: 0,
+        speed: _speedFor(emphasis),
+        silenceScale: _silenceScaleFor(emphasis),
+      );
+      final audio = _tts!.generateWithConfig(
+        text: _withEmphasisMarkup(phrase, emphasis),
+        config: genConfig,
+      );
+      if (audio.samples.isEmpty) {
+        debugPrint(
+          'SherpaTtsService.speak(): generated 0 samples for "$phrase"',
+        );
+        return;
+      }
 
-    final tempDir = await getTemporaryDirectory();
-    final wavPath = '${tempDir.path}/coaching_phrase.wav';
-    sherpa_onnx.writeWave(
-      filename: wavPath,
-      samples: audio.samples,
-      sampleRate: audio.sampleRate,
-    );
+      final tempDir = await getTemporaryDirectory();
+      final wavPath = '${tempDir.path}/coaching_phrase.wav';
+      sherpa_onnx.writeWave(
+        filename: wavPath,
+        samples: audio.samples,
+        sampleRate: audio.sampleRate,
+      );
 
-    await _player.stop();
-    await _player.play(DeviceFileSource(wavPath));
+      final wavFile = File(wavPath);
+      final size = await wavFile.exists() ? await wavFile.length() : 0;
+      debugPrint('SherpaTtsService.speak(): wrote $size bytes to $wavPath');
+
+      await _player.stop();
+      await _player.play(DeviceFileSource(wavPath));
+    } catch (e, st) {
+      debugPrint('SherpaTtsService.speak() FAILED: $e');
+      debugPrint('$st');
+      rethrow; // let AppTtsService catch this and fall back to flutter_tts
+    }
   }
 
   Future<void> stop() async {

@@ -64,9 +64,15 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   final GlobalKey<State<DebugPerfOverlay>> _debugPerfOverlayKey =
       GlobalKey<State<DebugPerfOverlay>>();
 
+  // Captured once while the widget is still alive — ref.read()/ref.watch()
+  // cannot be called inside dispose() (the element is already being torn
+  // down by then), so we grab the service reference early and reuse it.
+  late final CameraService _cameraService;
+
   @override
   void initState() {
     super.initState();
+    _cameraService = ref.read(cameraServiceProvider);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initCamera();
@@ -147,7 +153,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     if (!mounted) return;
 
     if (imagePath != null) {
-      ref.read(appTtsServiceProvider).speak('Photo captured.');
+      ref.read(appTtsServiceProvider).speak('Photo captured.', force: true);
     }
 
     if (cameraService.lastGallerySaveSucceeded == false) {
@@ -325,12 +331,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   @override
   void dispose() {
-    final cameraService = ref.read(cameraServiceProvider);
     _focusRingTimer?.cancel();
     _mlKitSubscription?.cancel();
-    cameraService.stopImageStream();
+    _cameraService.stopImageStream();
     WidgetsBinding.instance.removeObserver(this);
-    cameraService.dispose();
+    _cameraService.dispose();
     super.dispose();
   }
 

@@ -52,7 +52,7 @@ dev_dependencies:
     sdk: flutter
 
 flutter:
-  uses-material-design: true
   assets:
     - assets/images/
     - assets/models/vits-en/
+    - assets/models/vits-en/espeak-ng-data/

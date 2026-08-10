@@ -13,16 +13,17 @@ class AppTtsService {
   Future<void> speak(
     String phrase, {
     TtsEmphasis emphasis = TtsEmphasis.mild,
+    bool force = false,
   }) async {
     if (sherpa.isReady) {
       try {
-        await sherpa.speak(phrase, emphasis: emphasis);
+        await sherpa.speak(phrase, emphasis: emphasis, force: force);
         return;
       } catch (_) {
         // Falls through to flutter_tts below.
       }
     }
-    await fallback.speak(phrase);
+    await fallback.speak(phrase, force: force);
   }
 
   Future<void> stop() async {
