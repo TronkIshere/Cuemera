@@ -82,11 +82,6 @@ final autoCaptureProvider = Provider<void>((ref) {
     );
 
     ref.read(capturedShotProvider.notifier).state = shot;
-
-    final onFrame = ref.read(onFrameCallbackProvider);
-    if (onFrame != null) {
-      await cameraService.startImageStream(onFrame);
-    }
   });
 });
 

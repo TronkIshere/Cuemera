@@ -8,17 +8,18 @@ import 'error_reporting_service.dart';
 
 class CameraService {
   CameraController? _controller;
-  CameraController? _previewController;
   List<CameraDescription> _cameras = [];
   int _lensIndex = 0;
 
+  // Retained so capture() can resume the analysis stream with the same
+  // callback after takePicture(), without the caller having to re-supply
+  // it — see capture() below.
+  void Function(CameraImage image)? _onImage;
+
   CameraController? get controller => _controller;
-  CameraController? get previewController => _previewController;
   CameraDescription? get activeCameraDescription =>
       _controller != null && _cameras.isNotEmpty ? _cameras[_lensIndex] : null;
   bool get isInitialized => _controller?.value.isInitialized ?? false;
-  bool get isPreviewInitialized =>
-      _previewController?.value.isInitialized ?? false;
   bool get hasMultipleCameras => _cameras.length > 1;
 
   double _minZoom = 1.0;
@@ -27,27 +28,9 @@ class CameraService {
   double get minZoom => _minZoom;
   double get maxZoom => _maxZoom;
 
-  /// Wall-clock time the most recent [capture] spent setting up a
-  /// dedicated capture controller. Always `Duration.zero` now that
-  /// [capture] reuses the already-running [_previewController] instead of
-  /// creating a separate `ResolutionPreset.max` controller per photo —
-  /// kept (rather than removed) so existing readers of this field don't
-  /// break, and to make the "no separate setup happens anymore" fact
-  /// visible in the same place the old cost used to show up.
   Duration? lastCaptureControllerSetupLatency;
-
-  /// Wall-clock time the most recent [capture] spent inside
-  /// `takePicture()` itself.
   Duration? lastCaptureShutterLatency;
-
-  /// Wall-clock time the most recent [capture] spent tearing down a
-  /// dedicated capture controller. Always `Duration.zero` now — see
-  /// [lastCaptureControllerSetupLatency].
   Duration? lastCaptureControllerTeardownLatency;
-
-  /// Whether the most recent [capture] successfully saved to the device
-  /// gallery. `null` means no capture has completed yet; `false` covers
-  /// both a denied gallery permission and a thrown `Gal` exception.
   bool? lastGallerySaveSucceeded;
 
   Future<void> init() async {
@@ -56,47 +39,47 @@ class CameraService {
     await _createController(_cameras[_lensIndex]);
   }
 
+  // Single init path for the merged controller: drives preview, capture,
+  // and (via startImageStream) the ML Kit analysis stream — CameraX (the
+  // camera plugin's Android backend) already negotiates one shared session
+  // across those three use cases; there is no need for (and no Dart-level
+  // API to support) a second independently-opened controller on the same
+  // lens. .high is the preset the old _previewController used for
+  // preview/capture; ML Kit frame-processing speed with this resolution
+  // still needs validating on a physical device.
   Future<void> _createController(CameraDescription description) async {
     await _controller?.dispose();
     _controller = CameraController(
       description,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.nv21,
-    );
-    await _controller!.initialize();
-  }
-
-  Future<void> initPreviewController() async {
-    if (_cameras.isEmpty) return;
-    await _previewController?.dispose();
-    _previewController = CameraController(
-      _cameras[_lensIndex],
       ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.nv21,
     );
-    await _previewController!.initialize();
-    _minZoom = await _previewController!.getMinZoomLevel();
-    _maxZoom = await _previewController!.getMaxZoomLevel();
+    await _controller!.initialize();
+    _minZoom = await _controller!.getMinZoomLevel();
+    _maxZoom = await _controller!.getMaxZoomLevel();
   }
 
   Future<String?> capture() async {
-    if (!isPreviewInitialized || _previewController!.value.isTakingPicture) {
+    if (!isInitialized || _controller!.value.isTakingPicture) {
       return null;
     }
 
-    if (isInitialized && _controller!.value.isStreamingImages) {
+    final wasStreaming = _controller!.value.isStreamingImages;
+    if (wasStreaming) {
       await _controller!.stopImageStream();
     }
 
+    // No separate controller lifecycle anymore — capture() reuses the one
+    // shared controller instead of spinning up a temporary one per photo,
+    // so there is no setup/teardown step left to time.
     lastCaptureControllerSetupLatency = Duration.zero;
     lastCaptureControllerTeardownLatency = Duration.zero;
 
     String? path;
     try {
       final shutterStopwatch = Stopwatch()..start();
-      final file = await _previewController!.takePicture();
+      final file = await _controller!.takePicture();
       shutterStopwatch.stop();
       lastCaptureShutterLatency = shutterStopwatch.elapsed;
 
@@ -105,8 +88,15 @@ class CameraService {
       debugPrint(
         '[CameraService] capture() latency — '
         'shutter: ${lastCaptureShutterLatency?.inMilliseconds}ms '
-        '(reusing preview controller — no separate setup/teardown)',
+        '(single shared controller — no separate setup/teardown)',
       );
+      // Resume the analysis stream regardless of whether takePicture()
+      // succeeded or threw, using the callback captured by the last
+      // startImageStream() call — the caller no longer needs to re-supply
+      // it after a capture.
+      if (wasStreaming && _onImage != null && isInitialized) {
+        await _controller!.startImageStream(_onImage!);
+      }
     }
 
     if (path != null) {
@@ -135,26 +125,23 @@ class CameraService {
     await stopImageStream();
     await _controller?.dispose();
     _controller = null;
-    await _previewController?.dispose();
-    _previewController = null;
   }
 
   Future<void> resumeCameras() async {
     if (_cameras.isEmpty) return;
     await _createController(_cameras[_lensIndex]);
-    await initPreviewController();
   }
 
   Future<void> switchLens() async {
     if (_cameras.length < 2) return;
     _lensIndex = (_lensIndex + 1) % _cameras.length;
     await _createController(_cameras[_lensIndex]);
-    await initPreviewController();
   }
 
   Future<void> startImageStream(
     void Function(CameraImage image) onImage,
   ) async {
+    _onImage = onImage;
     if (!isInitialized || _controller!.value.isStreamingImages) return;
     await _controller!.startImageStream(onImage);
   }
@@ -169,8 +156,6 @@ class CameraService {
     await stopImageStream();
     await _controller?.dispose();
     _controller = null;
-    await _previewController?.dispose();
-    _previewController = null;
   }
 }
 

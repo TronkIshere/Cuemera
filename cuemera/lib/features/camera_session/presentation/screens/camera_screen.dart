@@ -91,7 +91,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     try {
       final cameraService = ref.read(cameraServiceProvider);
       await cameraService.init();
-      await cameraService.initPreviewController();
       ref.read(onFrameCallbackProvider.notifier).state = _onFrame;
       await cameraService.startImageStream(_onFrame);
 
@@ -189,9 +188,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     await Future.delayed(const Duration(milliseconds: 150));
     if (!mounted) return;
     setState(() => _showFlash = false);
-
-    if (!mounted) return;
-    await cameraService.startImageStream(_onFrame);
   }
 
   void _onAdjustmentsTap() {
@@ -263,8 +259,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   Future<void> _onScaleUpdate(ScaleUpdateDetails details) async {
     final cameraService = ref.read(cameraServiceProvider);
-    final previewController = cameraService.previewController;
-    if (previewController == null) return;
+    final controller = cameraService.controller;
+    if (controller == null) return;
 
     final zoom = (_baseZoom * details.scale).clamp(
       cameraService.minZoom,
@@ -273,7 +269,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     if (zoom == _currentZoom) return;
     _currentZoom = zoom;
     try {
-      await previewController.setZoomLevel(zoom);
+      await controller.setZoomLevel(zoom);
     } on CameraException {
       // unsupported, ignore
     }
@@ -284,8 +280,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     BoxConstraints constraints,
   ) async {
     final cameraService = ref.read(cameraServiceProvider);
-    final previewController = cameraService.previewController;
-    if (previewController == null) return;
+    final controller = cameraService.controller;
+    if (controller == null) return;
 
     final size = Size(constraints.maxWidth, constraints.maxHeight);
     final normalized = Offset(
@@ -294,8 +290,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
 
     try {
-      await previewController.setFocusPoint(normalized);
-      await previewController.setExposurePoint(normalized);
+      await controller.setFocusPoint(normalized);
+      await controller.setExposurePoint(normalized);
     } on CameraException {
       // unsupported, ignore
     }
@@ -424,11 +420,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   Widget _buildReadyBody(AppColors colors) {
     final cameraService = ref.read(cameraServiceProvider);
     final controller = cameraService.controller;
-    final previewController = cameraService.previewController;
-    if (controller == null ||
-        !controller.value.isInitialized ||
-        previewController == null ||
-        !previewController.value.isInitialized) {
+    if (controller == null || !controller.value.isInitialized) {
       return Center(
         child: CircularProgressIndicator(
           valueColor: AlwaysStoppedAnimation(colors.accent),
@@ -452,7 +444,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       fit: StackFit.expand,
       children: [
         CameraPreviewLayer(
-          previewController: previewController,
+          controller: controller,
           focusPoint: _focusPoint,
           accentColor: colors.accent,
           onScaleStart: _onScaleStart,

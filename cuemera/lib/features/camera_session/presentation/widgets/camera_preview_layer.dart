@@ -7,7 +7,7 @@ import 'focus_ring.dart';
 class CameraPreviewLayer extends StatelessWidget {
   const CameraPreviewLayer({
     super.key,
-    required this.previewController,
+    required this.controller,
     required this.focusPoint,
     required this.accentColor,
     required this.onScaleStart,
@@ -16,7 +16,7 @@ class CameraPreviewLayer extends StatelessWidget {
     required this.hasCaptured,
   });
 
-  final CameraController previewController;
+  final CameraController controller;
   final Offset? focusPoint;
   final Color accentColor;
   final Future<void> Function(ScaleStartDetails) onScaleStart;
@@ -39,9 +39,9 @@ class CameraPreviewLayer extends StatelessWidget {
               FittedBox(
                 fit: BoxFit.cover,
                 child: SizedBox(
-                  width: previewController.value.previewSize?.height ?? 1,
-                  height: previewController.value.previewSize?.width ?? 1,
-                  child: CameraPreview(previewController),
+                  width: controller.value.previewSize?.height ?? 1,
+                  height: controller.value.previewSize?.width ?? 1,
+                  child: CameraPreview(controller),
                 ),
               ),
               if (focusPoint != null)
