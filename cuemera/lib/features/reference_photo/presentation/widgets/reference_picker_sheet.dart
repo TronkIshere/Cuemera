@@ -251,6 +251,11 @@ class ReferenceAnalysisPainter extends CustomPainter {
     [_rightHip, _rightKnee, _rightAnkle],
   ];
 
+  static const List<List<int>> _mirroredChainIndexPairs = [
+    [0, 1],
+    [2, 3],
+  ];
+
   static const List<List<int>> _symmetricPairs = [
     [_leftElbow, _rightElbow],
     [_leftWrist, _rightWrist],
@@ -258,10 +263,39 @@ class ReferenceAnalysisPainter extends CustomPainter {
     [_leftAnkle, _rightAnkle],
   ];
 
-  static const double _minPlausibleSegmentScale = 0.15;
-  static const double _maxPlausibleSegmentScale = 4.0;
-  static const double _minPlausibleSymmetricSeparationScale = 0.2;
-  static const double _maxOppositeSideIntrusionScale = 0.1;
+  static const double _torsoHeightBodyUnits = 1.0;
+  static const double _torsoSideBodyUnits = 1.02;
+  static const double _shoulderWidthBodyUnits = 0.85;
+  static const double _hipWidthBodyUnits = 0.65;
+  static const double _eyeSpanBodyUnits = 0.15;
+
+  static const Map<int, double> _maxSegmentBodyUnits = {
+    _leftElbow: 0.75,
+    _rightElbow: 0.75,
+    _leftWrist: 0.72,
+    _rightWrist: 0.72,
+    _leftKnee: 1.15,
+    _rightKnee: 1.15,
+    _leftAnkle: 1.05,
+    _rightAnkle: 1.05,
+  };
+
+  static const double _bodyUnitOutlierCeilingMultiplier = 2.0;
+  static const double _segmentLengthSafetyMultiplier = 1.5;
+  static const double _definitiveSegmentLengthMultiplier = 2.0;
+  static const double _minSymmetricSeparationBodyUnits = 0.12;
+  static const double _shallowOppositeSideIntrusionBodyUnits = 0.12;
+  static const double _deepOppositeSideIntrusionBodyUnits = 0.45;
+  static const double _maxBilateralSegmentLengthRatio = 2.5;
+  static const double _maxSuspectBodyLandmarkFraction = 0.6;
+
+  static const int _excessiveSegmentLengthEvidence = 2;
+  static const int _shallowIntrusionEvidence = 1;
+  static const int _deepIntrusionEvidence = 2;
+  static const int _mirroredIntrusionEvidenceRelief = 1;
+  static const int _symmetricCollapseEvidence = 1;
+  static const int _bilateralLengthMismatchEvidence = 1;
+  static const int _suspectEvidenceThreshold = 2;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -292,9 +326,9 @@ class ReferenceAnalysisPainter extends CustomPainter {
       if (pose == null) {
         debugPrint('ReferenceAnalysisPainter pose=null');
       } else {
-        final torsoScale = _torsoScale(pose);
+        final bodyUnit = _bodyUnit(pose);
         final suspectForLog = _findSuspectLandmarks(pose);
-        debugPrint('ReferenceAnalysisPainter torsoScale=$torsoScale');
+        debugPrint('ReferenceAnalysisPainter bodyUnit=$bodyUnit');
         for (var i = 0; i < _landmarkNames.length; i++) {
           final value = i < pose.length ? pose[i] : null;
           final status = value == null
@@ -342,115 +376,212 @@ class ReferenceAnalysisPainter extends CustomPainter {
   }
 
   Set<int> _findSuspectLandmarks(List<Offset?> pose) {
-    final scale = _torsoScale(pose);
-    if (scale == null) return const {};
-
-    final maxLength = scale * _maxPlausibleSegmentScale;
-    final minLength = scale * _minPlausibleSegmentScale;
-    final minSeparation = scale * _minPlausibleSymmetricSeparationScale;
-    final suspect = <int>{};
-
-    Offset? point(int index) => index < pose.length ? pose[index] : null;
-    bool isUsable(Offset? p) => p != null && p.dx.isFinite && p.dy.isFinite;
-
+    final definitive = <int>{};
     for (var i = 0; i < pose.length; i++) {
-      if (pose[i] != null && !isUsable(pose[i])) suspect.add(i);
+      final point = pose[i];
+      if (point != null && (!point.dx.isFinite || !point.dy.isFinite)) {
+        definitive.add(i);
+      }
     }
 
+    final bodyUnit = _bodyUnit(pose);
+    if (bodyUnit == null) return definitive;
+
+    final evidence = <int, int>{};
+    void addEvidence(int index, int weight) {
+      if (weight <= 0) return;
+      evidence[index] = (evidence[index] ?? 0) + weight;
+    }
+
+    final segmentLengths = <int, double>{};
     for (final chain in _limbChains) {
       for (var i = 0; i < chain.length - 1; i++) {
-        final fromIndex = chain[i];
-        final toIndex = chain[i + 1];
-        if (suspect.contains(fromIndex)) {
-          suspect.add(toIndex);
-          continue;
-        }
-        final from = point(fromIndex);
-        final to = point(toIndex);
-        if (!isUsable(from) || !isUsable(to)) continue;
-        final length = (to! - from!).distance;
-        if (length > maxLength || length < minLength) {
-          suspect.add(toIndex);
+        final from = _usablePointAt(pose, chain[i]);
+        final to = _usablePointAt(pose, chain[i + 1]);
+        if (from == null || to == null) continue;
+
+        final distalIndex = chain[i + 1];
+        final length = (to - from).distance;
+        segmentLengths[distalIndex] = length;
+
+        final maxBodyUnits = _maxSegmentBodyUnits[distalIndex];
+        if (maxBodyUnits == null) continue;
+        final maxLength =
+            maxBodyUnits * bodyUnit * _segmentLengthSafetyMultiplier;
+        if (length > maxLength * _definitiveSegmentLengthMultiplier) {
+          definitive.add(distalIndex);
+        } else if (length > maxLength) {
+          addEvidence(distalIndex, _excessiveSegmentLengthEvidence);
         }
       }
     }
 
     for (final pair in _symmetricPairs) {
-      if (suspect.contains(pair[0]) || suspect.contains(pair[1])) continue;
-      final a = point(pair[0]);
-      final b = point(pair[1]);
-      if (!isUsable(a) || !isUsable(b)) continue;
-      if ((b! - a!).distance < minSeparation) {
-        suspect.add(pair[0]);
-        suspect.add(pair[1]);
+      final first = _usablePointAt(pose, pair[0]);
+      final second = _usablePointAt(pose, pair[1]);
+      if (first == null || second == null) continue;
+
+      if ((second - first).distance <
+          bodyUnit * _minSymmetricSeparationBodyUnits) {
+        addEvidence(pair[0], _symmetricCollapseEvidence);
+        addEvidence(pair[1], _symmetricCollapseEvidence);
+      }
+
+      final firstLength = segmentLengths[pair[0]];
+      final secondLength = segmentLengths[pair[1]];
+      if (firstLength != null &&
+          secondLength != null &&
+          firstLength > 0 &&
+          secondLength > 0) {
+        final longer = math.max(firstLength, secondLength);
+        final shorter = math.min(firstLength, secondLength);
+        if (longer / shorter > _maxBilateralSegmentLengthRatio) {
+          addEvidence(
+            firstLength > secondLength ? pair[0] : pair[1],
+            _bilateralLengthMismatchEvidence,
+          );
+        }
       }
     }
 
-    final torsoCenterX = _torsoCenterX(pose);
-    if (torsoCenterX != null) {
-      final margin = scale * _maxOppositeSideIntrusionScale;
-      for (final chain in _limbChains) {
+    final centerX = _torsoCenterX(pose);
+    if (centerX != null) {
+      final shallowMargin = bodyUnit * _shallowOppositeSideIntrusionBodyUnits;
+      final deepMargin = bodyUnit * _deepOppositeSideIntrusionBodyUnits;
+
+      Map<int, int> intrusionEvidence(List<int> chain, double centerX) {
         final isLeftChain = chain[0] == _leftShoulder || chain[0] == _leftHip;
+        final result = <int, int>{};
         for (var i = 1; i < chain.length; i++) {
-          final jointIndex = chain[i];
-          if (suspect.contains(jointIndex)) continue;
-          if (suspect.contains(chain[i - 1])) {
-            suspect.add(jointIndex);
-            continue;
-          }
-          final joint = point(jointIndex);
-          if (!isUsable(joint)) continue;
-          if (isLeftChain && joint!.dx < torsoCenterX - margin) {
-            suspect.add(jointIndex);
-          } else if (!isLeftChain && joint!.dx > torsoCenterX + margin) {
-            suspect.add(jointIndex);
-          }
+          final joint = _usablePointAt(pose, chain[i]);
+          if (joint == null) continue;
+          final intrusion = isLeftChain
+              ? centerX - joint.dx
+              : joint.dx - centerX;
+          if (intrusion <= shallowMargin) continue;
+          result[chain[i]] = intrusion > deepMargin
+              ? _deepIntrusionEvidence
+              : _shallowIntrusionEvidence;
+        }
+        return result;
+      }
+
+      for (final indexPair in _mirroredChainIndexPairs) {
+        final first = intrusionEvidence(_limbChains[indexPair[0]], centerX);
+        final second = intrusionEvidence(_limbChains[indexPair[1]], centerX);
+        final relief = first.isNotEmpty && second.isNotEmpty
+            ? _mirroredIntrusionEvidenceRelief
+            : 0;
+        for (final side in [first, second]) {
+          side.forEach((index, weight) => addEvidence(index, weight - relief));
         }
       }
+    }
+
+    final suspect = <int>{...definitive};
+    evidence.forEach((index, score) {
+      if (score >= _suspectEvidenceThreshold) suspect.add(index);
+    });
+
+    for (final chain in _limbChains) {
+      var cascading = false;
+      for (final index in chain) {
+        if (cascading) {
+          suspect.add(index);
+        } else if (suspect.contains(index)) {
+          cascading = true;
+        }
+      }
+    }
+
+    var presentBodyLandmarks = 0;
+    var suspectBodyLandmarks = 0;
+    for (var i = _leftShoulder; i <= _rightAnkle && i < pose.length; i++) {
+      if (pose[i] == null) continue;
+      presentBodyLandmarks++;
+      if (suspect.contains(i)) suspectBodyLandmarks++;
+    }
+    if (presentBodyLandmarks > 0 &&
+        suspectBodyLandmarks >
+            presentBodyLandmarks * _maxSuspectBodyLandmarkFraction) {
+      return definitive;
     }
 
     return suspect;
   }
 
+  Offset? _usablePointAt(List<Offset?> pose, int index) {
+    if (index < 0 || index >= pose.length) return null;
+    final point = pose[index];
+    if (point == null || !point.dx.isFinite || !point.dy.isFinite) return null;
+    return point;
+  }
+
+  double? _bodyUnit(List<Offset?> pose) {
+    final candidates = <double>[];
+    void addCandidate(double measured, double bodyUnits) {
+      if (measured > 0) candidates.add(measured / bodyUnits);
+    }
+
+    final leftShoulder = _usablePointAt(pose, _leftShoulder);
+    final rightShoulder = _usablePointAt(pose, _rightShoulder);
+    final leftHip = _usablePointAt(pose, _leftHip);
+    final rightHip = _usablePointAt(pose, _rightHip);
+    final leftEye = _usablePointAt(pose, _leftEye);
+    final rightEye = _usablePointAt(pose, _rightEye);
+
+    if (leftShoulder != null && rightShoulder != null) {
+      addCandidate(
+        (rightShoulder - leftShoulder).distance,
+        _shoulderWidthBodyUnits,
+      );
+    }
+    if (leftHip != null && rightHip != null) {
+      addCandidate((rightHip - leftHip).distance, _hipWidthBodyUnits);
+    }
+    if (leftShoulder != null &&
+        rightShoulder != null &&
+        leftHip != null &&
+        rightHip != null) {
+      final shoulderMid = (leftShoulder + rightShoulder) / 2;
+      final hipMid = (leftHip + rightHip) / 2;
+      addCandidate((hipMid - shoulderMid).distance, _torsoHeightBodyUnits);
+    }
+    if (leftShoulder != null && leftHip != null) {
+      addCandidate((leftHip - leftShoulder).distance, _torsoSideBodyUnits);
+    }
+    if (rightShoulder != null && rightHip != null) {
+      addCandidate((rightHip - rightShoulder).distance, _torsoSideBodyUnits);
+    }
+    if (leftEye != null && rightEye != null) {
+      addCandidate((rightEye - leftEye).distance, _eyeSpanBodyUnits);
+    }
+
+    if (candidates.isEmpty) return null;
+
+    candidates.sort();
+    final median = candidates[candidates.length ~/ 2];
+    final ceiling = median * _bodyUnitOutlierCeilingMultiplier;
+    var largestPlausible = 0.0;
+    for (final candidate in candidates) {
+      if (candidate <= ceiling && candidate > largestPlausible) {
+        largestPlausible = candidate;
+      }
+    }
+    return largestPlausible > 0 ? largestPlausible : median;
+  }
+
   double? _torsoCenterX(List<Offset?> pose) {
-    final leftShoulder = _leftShoulder < pose.length
-        ? pose[_leftShoulder]
-        : null;
-    final rightShoulder = _rightShoulder < pose.length
-        ? pose[_rightShoulder]
-        : null;
+    final leftShoulder = _usablePointAt(pose, _leftShoulder);
+    final rightShoulder = _usablePointAt(pose, _rightShoulder);
     if (leftShoulder != null && rightShoulder != null) {
       return (leftShoulder.dx + rightShoulder.dx) / 2;
     }
 
-    final leftHip = _leftHip < pose.length ? pose[_leftHip] : null;
-    final rightHip = _rightHip < pose.length ? pose[_rightHip] : null;
+    final leftHip = _usablePointAt(pose, _leftHip);
+    final rightHip = _usablePointAt(pose, _rightHip);
     if (leftHip != null && rightHip != null) {
       return (leftHip.dx + rightHip.dx) / 2;
-    }
-
-    return null;
-  }
-
-  /// A stable body-scale reference (shoulder width, falling back to hip
-  /// width) to judge whether a limb segment's length is plausible.
-  /// Returns null when neither pair is available, in which case outlier
-  /// filtering is skipped entirely rather than guessing.
-  double? _torsoScale(List<Offset?> pose) {
-    final leftShoulder = _leftShoulder < pose.length
-        ? pose[_leftShoulder]
-        : null;
-    final rightShoulder = _rightShoulder < pose.length
-        ? pose[_rightShoulder]
-        : null;
-    if (leftShoulder != null && rightShoulder != null) {
-      return (rightShoulder - leftShoulder).distance;
-    }
-
-    final leftHip = _leftHip < pose.length ? pose[_leftHip] : null;
-    final rightHip = _rightHip < pose.length ? pose[_rightHip] : null;
-    if (leftHip != null && rightHip != null) {
-      return (rightHip - leftHip).distance;
     }
 
     return null;
