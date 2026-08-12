@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -208,6 +209,24 @@ class ReferenceAnalysisPainter extends CustomPainter {
   static const int _leftAnkle = 13;
   static const int _rightAnkle = 14;
 
+  static const List<String> _landmarkNames = [
+    'nose',
+    'leftEye',
+    'rightEye',
+    'leftShoulder',
+    'rightShoulder',
+    'leftElbow',
+    'rightElbow',
+    'leftWrist',
+    'rightWrist',
+    'leftHip',
+    'rightHip',
+    'leftKnee',
+    'rightKnee',
+    'leftAnkle',
+    'rightAnkle',
+  ];
+
   static const List<List<int>> _skeletonConnections = [
     [_leftShoulder, _rightShoulder],
     [_leftShoulder, _leftElbow],
@@ -242,6 +261,7 @@ class ReferenceAnalysisPainter extends CustomPainter {
   static const double _minPlausibleSegmentScale = 0.15;
   static const double _maxPlausibleSegmentScale = 4.0;
   static const double _minPlausibleSymmetricSeparationScale = 0.2;
+  static const double _maxOppositeSideIntrusionScale = 0.1;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -268,6 +288,24 @@ class ReferenceAnalysisPainter extends CustomPainter {
       ..strokeWidth = 2;
 
     final pose = poseLandmarkPoints;
+    if (kDebugMode) {
+      if (pose == null) {
+        debugPrint('ReferenceAnalysisPainter pose=null');
+      } else {
+        final torsoScale = _torsoScale(pose);
+        final suspectForLog = _findSuspectLandmarks(pose);
+        debugPrint('ReferenceAnalysisPainter torsoScale=$torsoScale');
+        for (var i = 0; i < _landmarkNames.length; i++) {
+          final value = i < pose.length ? pose[i] : null;
+          final status = value == null
+              ? 'null'
+              : suspectForLog.contains(i)
+              ? 'suspect'
+              : 'drawn';
+          debugPrint('ReferenceAnalysisPainter ${_landmarkNames[i]}=$status');
+        }
+      }
+    }
     if (pose != null) {
       final suspectIndices = _findSuspectLandmarks(pose);
 
@@ -348,7 +386,50 @@ class ReferenceAnalysisPainter extends CustomPainter {
       }
     }
 
+    final torsoCenterX = _torsoCenterX(pose);
+    if (torsoCenterX != null) {
+      final margin = scale * _maxOppositeSideIntrusionScale;
+      for (final chain in _limbChains) {
+        final isLeftChain = chain[0] == _leftShoulder || chain[0] == _leftHip;
+        for (var i = 1; i < chain.length; i++) {
+          final jointIndex = chain[i];
+          if (suspect.contains(jointIndex)) continue;
+          if (suspect.contains(chain[i - 1])) {
+            suspect.add(jointIndex);
+            continue;
+          }
+          final joint = point(jointIndex);
+          if (!isUsable(joint)) continue;
+          if (isLeftChain && joint!.dx < torsoCenterX - margin) {
+            suspect.add(jointIndex);
+          } else if (!isLeftChain && joint!.dx > torsoCenterX + margin) {
+            suspect.add(jointIndex);
+          }
+        }
+      }
+    }
+
     return suspect;
+  }
+
+  double? _torsoCenterX(List<Offset?> pose) {
+    final leftShoulder = _leftShoulder < pose.length
+        ? pose[_leftShoulder]
+        : null;
+    final rightShoulder = _rightShoulder < pose.length
+        ? pose[_rightShoulder]
+        : null;
+    if (leftShoulder != null && rightShoulder != null) {
+      return (leftShoulder.dx + rightShoulder.dx) / 2;
+    }
+
+    final leftHip = _leftHip < pose.length ? pose[_leftHip] : null;
+    final rightHip = _rightHip < pose.length ? pose[_rightHip] : null;
+    if (leftHip != null && rightHip != null) {
+      return (leftHip.dx + rightHip.dx) / 2;
+    }
+
+    return null;
   }
 
   /// A stable body-scale reference (shoulder width, falling back to hip
