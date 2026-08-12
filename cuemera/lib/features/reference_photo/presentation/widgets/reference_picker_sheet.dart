@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../shared/widgets/loading_indicator.dart';
 import '../../domain/models/tolerance_settings.dart';
 import '../../providers/reference_providers.dart';
 
@@ -100,6 +101,10 @@ class ReferencePickerSheet extends ConsumerWidget {
                                         ),
                                       ),
                                     ),
+                                  if (profileAsync.isLoading)
+                                    const LoadingOverlay(
+                                      message: 'Analyzing photo...',
+                                    ),
                                 ],
                               ),
                             ),
@@ -151,15 +156,9 @@ class ReferencePickerSheet extends ConsumerWidget {
                             tolerance: tolerance,
                             ref: ref,
                           ),
-                    loading: () => Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.md,
-                      ),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation(colors.accent),
-                        ),
-                      ),
+                    loading: () => const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                      child: Center(child: LoadingIndicator()),
                     ),
                     error: (error, stackTrace) => Padding(
                       padding: const EdgeInsets.symmetric(
