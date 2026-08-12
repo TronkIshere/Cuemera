@@ -18,9 +18,8 @@ class ReferenceComparisonEngine {
   static const double _moderateSeverityCeiling =
       CoachingDecision.moderateSeverityCeiling;
   static const bool _faceRollDirectionIsMirrored = false;
-  static const bool _faceYawDirectionIsMirrored = false;
-
-  int _tierRotation = 0;
+  static const bool _shoulderBalanceDirectionIsMirrored = false;
+  static const bool _bodyYawDirectionIsMirrored = false;
 
   String _tieredPhrase(
     double normalizedSeverity, {
@@ -33,22 +32,20 @@ class ReferenceComparisonEngine {
     return strong;
   }
 
-  _AttributeEvaluation? _worst(List<_AttributeEvaluation> tier) {
+  PriorityAction? _pickWorst(List<_AttributeEvaluation> tier) {
     final exceeding = tier
         .where((candidate) => candidate.deviationExceedsThreshold)
         .toList();
     if (exceeding.isEmpty) return null;
 
     exceeding.sort((a, b) => b.severity.compareTo(a.severity));
-    return exceeding.first;
-  }
+    final worst = exceeding.first;
 
-  PriorityAction _toPriorityAction(_AttributeEvaluation evaluation) {
     return PriorityAction(
-      phrase: evaluation.phrase,
-      severity: evaluation.severity,
+      phrase: worst.phrase,
+      severity: worst.severity,
       sourceLayer: 'reference_comparison_engine',
-      decision: evaluation.decision,
+      decision: worst.decision,
     );
   }
 
@@ -83,10 +80,6 @@ class ReferenceComparisonEngine {
     );
     addIfPresent(
       poseAndFaceTier,
-      _evaluateFaceYaw(subject, reference, tolerance),
-    );
-    addIfPresent(
-      poseAndFaceTier,
       _evaluateBodyRatio(subject, reference, tolerance),
     );
     addIfPresent(
@@ -100,6 +93,18 @@ class ReferenceComparisonEngine {
     addIfPresent(
       poseAndFaceTier,
       _evaluateExpression(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateShoulderBalance(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateShoulderSpan(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateBodyYaw(subject, reference, tolerance),
     );
 
     addIfPresent(
@@ -122,25 +127,9 @@ class ReferenceComparisonEngine {
     addIfPresent(lightingTier, _evaluateWarmth(scene, reference, tolerance));
     addIfPresent(lightingTier, _evaluateHue(scene, reference, tolerance));
 
-    final tiers = [poseAndFaceTier, compositionTier, lightingTier];
-    final worstPerTier = tiers.map(_worst).toList();
-
-    for (final worst in worstPerTier) {
-      if (worst != null &&
-          worst.decision.severityBand != CoachingSeverityBand.mild) {
-        return _toPriorityAction(worst);
-      }
-    }
-
-    for (var i = 0; i < worstPerTier.length; i++) {
-      final idx = (_tierRotation + i) % worstPerTier.length;
-      final candidate = worstPerTier[idx];
-      if (candidate != null) {
-        _tierRotation = (idx + 1) % worstPerTier.length;
-        return _toPriorityAction(candidate);
-      }
-    }
-    return null;
+    return _pickWorst(poseAndFaceTier) ??
+        _pickWorst(compositionTier) ??
+        _pickWorst(lightingTier);
   }
 
   _AttributeEvaluation? _evaluateShoulderAngle(
@@ -165,8 +154,7 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final subjectAheadOfReference = subjectValue > referenceValue;
-    final phrase = subjectAheadOfReference
+    final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Square your shoulders just a touch',
@@ -186,7 +174,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.shoulderAngle,
-        direction: subjectAheadOfReference
+        direction: subjectValue > referenceValue
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.poseAndFace,
@@ -218,8 +206,7 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final subjectAheadOfReference = subjectValue > referenceValue;
-    final phrase = subjectAheadOfReference
+    final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Tilt your chin down just a touch',
@@ -239,7 +226,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.facePitch,
-        direction: subjectAheadOfReference
+        direction: subjectValue > referenceValue
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.poseAndFace,
@@ -305,13 +292,132 @@ class ReferenceComparisonEngine {
     );
   }
 
-  _AttributeEvaluation? _evaluateFaceYaw(
+  // direction here names the shoulder the correction acts on (matching the
+  // phrase text), not the side of excess deviation — unlike faceRoll above,
+  // where direction/phrase both describe the diagnosed tilt direction.
+  _AttributeEvaluation? _evaluateShoulderBalance(
     SubjectProfile subject,
     ReferenceProfile reference,
     ToleranceSettings tolerance,
   ) {
-    final subjectValue = subject.faceAngleDegrees;
-    final referenceValue = reference.faceAngleDegrees;
+    final subjectValue = subject.shoulderBalanceRatio;
+    final referenceValue = reference.shoulderBalanceRatio;
+    if (subjectValue == null || referenceValue == null) return null;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForPoseRatio,
+    );
+    final thresholdForPose = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForPose,
+    );
+
+    final subjectLeftLowerThanReference = _shoulderBalanceDirectionIsMirrored
+        ? subjectValue < referenceValue
+        : subjectValue > referenceValue;
+
+    final phrase = subjectLeftLowerThanReference
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Level your shoulders just a touch',
+            moderate: 'Lift your left shoulder slightly, like the reference',
+            strong:
+                "Your left shoulder is a lot lower than the reference — lift it",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Level your shoulders just a touch',
+            moderate: 'Lift your right shoulder slightly, like the reference',
+            strong:
+                "Your right shoulder is a lot lower than the reference — lift it",
+          );
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.shoulderBalance,
+        direction: subjectLeftLowerThanReference
+            ? CoachingDirection.left
+            : CoachingDirection.right,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
+    );
+  }
+
+  _AttributeEvaluation? _evaluateShoulderSpan(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.shoulderSpanRatio;
+    final referenceValue = reference.shoulderSpanRatio;
+    if (subjectValue == null || referenceValue == null) return null;
+
+    final deviation = ComparisonMath.relativeDeviation(
+      subjectValue,
+      referenceValue,
+    );
+    if (deviation == null) return null;
+
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForPoseRatio,
+    );
+    final thresholdForPose = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForPose,
+    );
+
+    final subjectBroaderThanReference = subjectValue > referenceValue;
+    final phrase = subjectBroaderThanReference
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Relax your shoulders just a touch',
+            moderate: 'Relax your shoulders, like the reference',
+            strong:
+                "Your shoulders are a lot broader than the reference — relax them in",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Open your shoulders slightly',
+            moderate: 'Open your shoulders more, like the reference',
+            strong:
+                "Your shoulders are a lot narrower than the reference — open them up",
+          );
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.shoulderSpan,
+        direction: subjectBroaderThanReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
+    );
+  }
+
+  // direction here names the correction ("turn left/right"), matching the
+  // phrase text — same choice as _evaluateShoulderBalance above.
+  _AttributeEvaluation? _evaluateBodyYaw(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.bodyYawEstimate;
+    final referenceValue = reference.bodyYawEstimate;
     if (subjectValue == null || referenceValue == null) return null;
 
     final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
@@ -327,31 +433,31 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final subjectNeedsToTurnLeft = _faceYawDirectionIsMirrored
+    final subjectTurnedMoreTowardRight = _bodyYawDirectionIsMirrored
         ? subjectValue < referenceValue
         : subjectValue > referenceValue;
 
-    final phrase = subjectNeedsToTurnLeft
+    final phrase = subjectTurnedMoreTowardRight
         ? _tieredPhrase(
             normalizedSeverity,
-            mild: 'Turn your face slightly to your left',
-            moderate: 'Turn your face more to your left, like the reference',
+            mild: 'Turn your body slightly to your left',
+            moderate: 'Turn your body more to your left, like the reference',
             strong:
-                "Turn your face a lot more to your left — you're angled well past the reference",
+                "Turn your body a lot more to your left — your torso is angled well past the reference",
           )
         : _tieredPhrase(
             normalizedSeverity,
-            mild: 'Turn your face slightly to your right',
-            moderate: 'Turn your face more to your right, like the reference',
+            mild: 'Turn your body slightly to your right',
+            moderate: 'Turn your body more to your right, like the reference',
             strong:
-                "Turn your face a lot more to your right — you're angled well past the reference",
+                "Turn your body a lot more to your right — your torso is angled well past the reference",
           );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
-        attribute: CoachingAttribute.faceYaw,
-        direction: subjectNeedsToTurnLeft
+        attribute: CoachingAttribute.bodyYaw,
+        direction: subjectTurnedMoreTowardRight
             ? CoachingDirection.left
             : CoachingDirection.right,
         tier: CoachingTier.poseAndFace,
@@ -393,7 +499,7 @@ class ReferenceComparisonEngine {
       mild: "Your framing's a touch different from the reference",
       moderate: 'Adjust your framing to better match the reference proportions',
       strong:
-          'Your framing is quite different from the reference — try stepping closer or farther, or reframing, to match',
+          'Your framing is quite different from the reference — reframe to match',
     );
 
     return _AttributeEvaluation(
@@ -435,8 +541,7 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final subjectMoreOpenThanReference = subjectValue > referenceValue;
-    final phrase = subjectMoreOpenThanReference
+    final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Close your mouth just slightly',
@@ -456,7 +561,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.mouthOpen,
-        direction: subjectMoreOpenThanReference
+        direction: subjectValue > referenceValue
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.poseAndFace,
@@ -493,8 +598,7 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final subjectMoreOpenThanReference = subjectValue > referenceValue;
-    final phrase = subjectMoreOpenThanReference
+    final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Relax your eyes just a touch',
@@ -514,7 +618,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.eyeOpen,
-        direction: subjectMoreOpenThanReference
+        direction: subjectValue > referenceValue
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.poseAndFace,
@@ -581,8 +685,7 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
-    final subjectHasMoreSpaceThanReference = subjectValue > referenceValue;
-    final phrase = subjectHasMoreSpaceThanReference
+    final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Fill the frame just a touch more',
@@ -602,7 +705,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.negativeSpace,
-        direction: subjectHasMoreSpaceThanReference
+        direction: subjectValue > referenceValue
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.composition,
@@ -676,8 +779,7 @@ class ReferenceComparisonEngine {
       thresholdForColor,
     );
 
-    final subjectBrighterThanReference = subjectValue > referenceValue;
-    final phrase = subjectBrighterThanReference
+    final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Move to slightly softer light, like your reference',
@@ -697,7 +799,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.brightness,
-        direction: subjectBrighterThanReference
+        direction: subjectValue > referenceValue
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.lighting,
@@ -734,9 +836,7 @@ class ReferenceComparisonEngine {
       thresholdForComposition,
     );
 
-    final subjectMoreClutteredThanReference =
-        subjectValue > normalizedReferenceValue;
-    final phrase = subjectMoreClutteredThanReference
+    final phrase = subjectValue > normalizedReferenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Clean up the background just a touch, like your reference',
@@ -756,7 +856,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.backgroundClutter,
-        direction: subjectMoreClutteredThanReference
+        direction: subjectValue > normalizedReferenceValue
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.composition,
@@ -788,8 +888,7 @@ class ReferenceComparisonEngine {
       thresholdForColor,
     );
 
-    final subjectCoolerThanReference = subjectValue < referenceValue;
-    final phrase = subjectCoolerThanReference
+    final phrase = subjectValue < referenceValue
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Find slightly warmer tones, like your reference',
@@ -809,7 +908,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.warmth,
-        direction: subjectCoolerThanReference
+        direction: subjectValue < referenceValue
             ? CoachingDirection.increase
             : CoachingDirection.decrease,
         tier: CoachingTier.lighting,

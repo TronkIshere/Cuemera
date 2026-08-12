@@ -35,8 +35,6 @@ class CoachingPhraseModelService {
 
   Future<void> ensureInstalled({void Function(int percent)? onProgress}) async {
     if (isReady) return;
-    // Guards against a double-install race if the caller (e.g. the
-    // Settings toggle) somehow triggers this twice in quick succession.
     if (_installing) return;
     _installing = true;
     try {
@@ -55,13 +53,6 @@ class CoachingPhraseModelService {
 
   Future<String?> generate(CoachingDecision decision) async {
     if (!isReady) return null;
-    // `voice_providers.dart` times out a slow generate() call and moves on,
-    // but the underlying native session keeps running in the background —
-    // Dart's Future.timeout() doesn't cancel it. Without this guard, a new
-    // decision arriving while an old (abandoned) call is still finishing
-    // could start a second concurrent native session on the same model.
-    // Fail fast instead: the caller falls back to the phrase bank for this
-    // one decision, same as any other generation failure.
     if (_generating) return null;
     _generating = true;
 

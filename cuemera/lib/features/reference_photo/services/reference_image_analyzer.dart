@@ -19,11 +19,17 @@ import '../domain/comparison_math.dart';
 class _PoseAnalysisResult {
   final double? bodyRatio;
   final double? shoulderAngleDegrees;
+  final double? shoulderBalanceRatio;
+  final double? shoulderSpanRatio;
+  final double? bodyYawEstimate;
   final List<Offset?>? poseLandmarkPoints;
 
   const _PoseAnalysisResult({
     this.bodyRatio,
     this.shoulderAngleDegrees,
+    this.shoulderBalanceRatio,
+    this.shoulderSpanRatio,
+    this.bodyYawEstimate,
     this.poseLandmarkPoints,
   });
 }
@@ -160,6 +166,9 @@ class ReferenceImageAnalyzer {
       faceAngleXDegrees: faceResult.faceAngleXDegrees,
       faceAngleZDegrees: faceResult.faceAngleZDegrees,
       shoulderAngleDegrees: poseResult.shoulderAngleDegrees,
+      shoulderBalanceRatio: poseResult.shoulderBalanceRatio,
+      shoulderSpanRatio: poseResult.shoulderSpanRatio,
+      bodyYawEstimate: poseResult.bodyYawEstimate,
       expression: faceResult.expression,
       smilingProbability: faceResult.smilingProbability,
       leftEyeOpenProbability: faceResult.leftEyeOpenProbability,
@@ -193,6 +202,9 @@ class ReferenceImageAnalyzer {
   Future<_PoseAnalysisResult> _analyzePose(InputImage inputImage) async {
     double? bodyRatio;
     double? shoulderAngleDegrees;
+    double? shoulderBalanceRatio;
+    double? shoulderSpanRatio;
+    double? bodyYawEstimate;
     List<Offset?>? poseLandmarkPoints;
     final poseDetector = PoseDetector(options: PoseDetectorOptions());
     try {
@@ -202,6 +214,7 @@ class ReferenceImageAnalyzer {
         final leftShoulder = landmarks[PoseLandmarkType.leftShoulder];
         final rightShoulder = landmarks[PoseLandmarkType.rightShoulder];
         final leftHip = landmarks[PoseLandmarkType.leftHip];
+        final rightHip = landmarks[PoseLandmarkType.rightHip];
         final leftAnkle = landmarks[PoseLandmarkType.leftAnkle];
         final nose = landmarks[PoseLandmarkType.nose];
 
@@ -211,6 +224,42 @@ class ReferenceImageAnalyzer {
           final dx = rightShoulder.x - leftShoulder.x;
           shoulderAngleDegrees = atan2(dy, dx) * 180 / pi;
           torsoScale = sqrt(dx * dx + dy * dy);
+
+          // Sign convention: positive means the left shoulder sits lower
+          // (larger y) than the right. Normalized by shoulder-width so
+          // it stays scale-invariant regardless of subject distance.
+          shoulderBalanceRatio = torsoScale > 0
+              ? (leftShoulder.y - rightShoulder.y) / torsoScale
+              : null;
+
+          // z is ML Kit's experimental depth value (same unit as x/y,
+          // origin at the hip, "less accurate than x and y" per Google's
+          // docs). This mirrors the shoulderAngleDegrees formula above
+          // but swaps y for z, so a rotated torso (one shoulder closer to
+          // camera) reads as a nonzero angle. Left/right sign is
+          // unverified on a physical device — see
+          // ReferenceComparisonEngine._bodyYawDirectionIsMirrored.
+          bodyYawEstimate =
+              atan2(rightShoulder.z - leftShoulder.z, dx) * 180 / pi;
+
+          if (leftHip != null &&
+              rightHip != null &&
+              leftHip.likelihood >= _minLandmarkLikelihood &&
+              rightHip.likelihood >= _minLandmarkLikelihood) {
+            final shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
+            final shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
+            final hipMidX = (leftHip.x + rightHip.x) / 2;
+            final hipMidY = (leftHip.y + rightHip.y) / 2;
+            final torsoHeight = sqrt(
+              pow(hipMidX - shoulderMidX, 2) + pow(hipMidY - shoulderMidY, 2),
+            );
+            // Shoulder width relative to torso height: bigger means
+            // broader/more spread shoulders, smaller means narrower/
+            // hunched, independent of the subject's distance from camera.
+            shoulderSpanRatio = torsoHeight > 0
+                ? torsoScale / torsoHeight
+                : null;
+          }
         }
 
         final noseConfident =
@@ -229,8 +278,8 @@ class ReferenceImageAnalyzer {
           // computing it from a bad position.
           final ankleExtrapolationSuspect =
               torsoScale != null &&
-                  torsoScale > 0 &&
-                  lowerLength > _maxExtremityExtrapolationMultiplier * torsoScale;
+              torsoScale > 0 &&
+              lowerLength > _maxExtremityExtrapolationMultiplier * torsoScale;
           if (lowerLength > 0 && !ankleExtrapolationSuspect) {
             bodyRatio = upperLength / lowerLength;
           }
@@ -275,6 +324,9 @@ class ReferenceImageAnalyzer {
     return _PoseAnalysisResult(
       bodyRatio: bodyRatio,
       shoulderAngleDegrees: shoulderAngleDegrees,
+      shoulderBalanceRatio: shoulderBalanceRatio,
+      shoulderSpanRatio: shoulderSpanRatio,
+      bodyYawEstimate: bodyYawEstimate,
       poseLandmarkPoints: poseLandmarkPoints,
     );
   }
@@ -558,11 +610,11 @@ class ReferenceImageAnalyzer {
 
   @visibleForTesting
   int? estimateBackgroundClutter(
-      img.Image decoded, {
-        required int maskWidth,
-        required int maskHeight,
-        required List<double> confidences,
-      }) {
+    img.Image decoded, {
+    required int maskWidth,
+    required int maskHeight,
+    required List<double> confidences,
+  }) {
     final width = decoded.width;
     final height = decoded.height;
     if (width <= 0 || height <= 0 || confidences.isEmpty) return null;

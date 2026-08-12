@@ -9,6 +9,9 @@ class ReferenceProfile {
     this.faceAngleXDegrees,
     this.faceAngleZDegrees,
     this.shoulderAngleDegrees,
+    this.shoulderBalanceRatio,
+    this.shoulderSpanRatio,
+    this.bodyYawEstimate,
     this.expression,
     this.smilingProbability,
     this.leftEyeOpenProbability,
@@ -44,6 +47,15 @@ class ReferenceProfile {
   final double? faceAngleXDegrees;
   final double? faceAngleZDegrees;
   final double? shoulderAngleDegrees;
+
+  // See SubjectProfile.shoulderBalanceRatio/shoulderSpanRatio/
+  // bodyYawEstimate for sign conventions and normalization — same
+  // definitions, computed here from the reference photo's pose landmarks
+  // in ReferenceImageAnalyzer._analyzePose instead of the live feed.
+  final double? shoulderBalanceRatio;
+  final double? shoulderSpanRatio;
+  final double? bodyYawEstimate;
+
   final String? expression;
   final double? smilingProbability;
   final double? leftEyeOpenProbability;
@@ -85,6 +97,9 @@ class ReferenceProfile {
     double? faceAngleXDegrees,
     double? faceAngleZDegrees,
     double? shoulderAngleDegrees,
+    double? shoulderBalanceRatio,
+    double? shoulderSpanRatio,
+    double? bodyYawEstimate,
     String? expression,
     double? smilingProbability,
     double? leftEyeOpenProbability,
@@ -120,6 +135,9 @@ class ReferenceProfile {
       faceAngleXDegrees: faceAngleXDegrees ?? this.faceAngleXDegrees,
       faceAngleZDegrees: faceAngleZDegrees ?? this.faceAngleZDegrees,
       shoulderAngleDegrees: shoulderAngleDegrees ?? this.shoulderAngleDegrees,
+      shoulderBalanceRatio: shoulderBalanceRatio ?? this.shoulderBalanceRatio,
+      shoulderSpanRatio: shoulderSpanRatio ?? this.shoulderSpanRatio,
+      bodyYawEstimate: bodyYawEstimate ?? this.bodyYawEstimate,
       expression: expression ?? this.expression,
       smilingProbability: smilingProbability ?? this.smilingProbability,
       leftEyeOpenProbability:

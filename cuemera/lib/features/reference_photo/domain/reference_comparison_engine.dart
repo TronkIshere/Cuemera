@@ -18,6 +18,8 @@ class ReferenceComparisonEngine {
   static const double _moderateSeverityCeiling =
       CoachingDecision.moderateSeverityCeiling;
   static const bool _faceRollDirectionIsMirrored = false;
+  static const bool _shoulderBalanceDirectionIsMirrored = false;
+  static const bool _bodyYawDirectionIsMirrored = false;
 
   String _tieredPhrase(
     double normalizedSeverity, {
@@ -91,6 +93,18 @@ class ReferenceComparisonEngine {
     addIfPresent(
       poseAndFaceTier,
       _evaluateExpression(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateShoulderBalance(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateShoulderSpan(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateBodyYaw(subject, reference, tolerance),
     );
 
     addIfPresent(
@@ -271,6 +285,181 @@ class ReferenceComparisonEngine {
         direction: subjectTiltedMoreTowardRight
             ? CoachingDirection.right
             : CoachingDirection.left,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
+    );
+  }
+
+  // direction here names the shoulder the correction acts on (matching the
+  // phrase text), not the side of excess deviation — unlike faceRoll above,
+  // where direction/phrase both describe the diagnosed tilt direction.
+  _AttributeEvaluation? _evaluateShoulderBalance(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.shoulderBalanceRatio;
+    final referenceValue = reference.shoulderBalanceRatio;
+    if (subjectValue == null || referenceValue == null) return null;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForPoseRatio,
+    );
+    final thresholdForPose = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForPose,
+    );
+
+    final subjectLeftLowerThanReference = _shoulderBalanceDirectionIsMirrored
+        ? subjectValue < referenceValue
+        : subjectValue > referenceValue;
+
+    final phrase = subjectLeftLowerThanReference
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Level your shoulders just a touch',
+            moderate: 'Lift your left shoulder slightly, like the reference',
+            strong:
+                "Your left shoulder is a lot lower than the reference — lift it",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Level your shoulders just a touch',
+            moderate: 'Lift your right shoulder slightly, like the reference',
+            strong:
+                "Your right shoulder is a lot lower than the reference — lift it",
+          );
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.shoulderBalance,
+        direction: subjectLeftLowerThanReference
+            ? CoachingDirection.left
+            : CoachingDirection.right,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
+    );
+  }
+
+  _AttributeEvaluation? _evaluateShoulderSpan(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.shoulderSpanRatio;
+    final referenceValue = reference.shoulderSpanRatio;
+    if (subjectValue == null || referenceValue == null) return null;
+
+    final deviation = ComparisonMath.relativeDeviation(
+      subjectValue,
+      referenceValue,
+    );
+    if (deviation == null) return null;
+
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForPoseRatio,
+    );
+    final thresholdForPose = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForPose,
+    );
+
+    final subjectBroaderThanReference = subjectValue > referenceValue;
+    final phrase = subjectBroaderThanReference
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Relax your shoulders just a touch',
+            moderate: 'Relax your shoulders, like the reference',
+            strong:
+                "Your shoulders are a lot broader than the reference — relax them in",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Open your shoulders slightly',
+            moderate: 'Open your shoulders more, like the reference',
+            strong:
+                "Your shoulders are a lot narrower than the reference — open them up",
+          );
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.shoulderSpan,
+        direction: subjectBroaderThanReference
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+      ),
+    );
+  }
+
+  // direction here names the correction ("turn left/right"), matching the
+  // phrase text — same choice as _evaluateShoulderBalance above.
+  _AttributeEvaluation? _evaluateBodyYaw(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final subjectValue = subject.bodyYawEstimate;
+    final referenceValue = reference.bodyYawEstimate;
+    if (subjectValue == null || referenceValue == null) return null;
+
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForPose,
+    );
+    final thresholdForPose = ComparisonMath.thresholdForPose(
+      tolerance.poseTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForPose,
+    );
+
+    final subjectTurnedMoreTowardRight = _bodyYawDirectionIsMirrored
+        ? subjectValue < referenceValue
+        : subjectValue > referenceValue;
+
+    final phrase = subjectTurnedMoreTowardRight
+        ? _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Turn your body slightly to your left',
+            moderate: 'Turn your body more to your left, like the reference',
+            strong:
+                "Turn your body a lot more to your left — your torso is angled well past the reference",
+          )
+        : _tieredPhrase(
+            normalizedSeverity,
+            mild: 'Turn your body slightly to your right',
+            moderate: 'Turn your body more to your right, like the reference',
+            strong:
+                "Turn your body a lot more to your right — your torso is angled well past the reference",
+          );
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.bodyYaw,
+        direction: subjectTurnedMoreTowardRight
+            ? CoachingDirection.left
+            : CoachingDirection.right,
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,

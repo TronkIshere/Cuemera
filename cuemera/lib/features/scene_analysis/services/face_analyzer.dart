@@ -8,14 +8,6 @@ import '../../reference_photo/domain/comparison_math.dart';
 import '../domain/models/subject_profile.dart';
 
 class FaceAnalyzer {
-  // `eyesOpen` (bool gate) and `expression` (classified label) are disabled
-  // for now: ML Kit's frame-to-frame probability noise flips both signals
-  // constantly with no hysteresis in place to smooth them. facePitch,
-  // faceRoll, mouthOpenRatio, and eyeOpenRatio (the continuous ratio, not
-  // this bool) are unaffected and keep computing as before.
-  //
-  // Flip this back to `true` once hysteresis (or a real model) lands for
-  // these two signals — that's the only change needed to re-enable them.
   static const bool enableEyeAndExpressionSignals = false;
 
   SubjectProfile analyzeFace(dynamic mlkitFaceResult, SubjectProfile previous) {
