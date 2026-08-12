@@ -225,23 +225,23 @@ class ReferenceAnalysisPainter extends CustomPainter {
     [_nose, _rightEye],
   ];
 
-  /// Limb-extremity landmarks. When a photo is framed to cut off before
-  /// these (e.g. a half-body shot ending at the knee), ML Kit sometimes
-  /// still reports a landmark here with enough likelihood to pass
-  /// [ReferenceImageAnalyzer]'s confidence filter, but at a wildly
-  /// extrapolated position since the joint isn't actually visible. These
-  /// are the landmarks checked against [_maxPlausibleSegmentScale] below.
-  static const Set<int> _extremityLandmarks = {
-    _leftWrist,
-    _rightWrist,
-    _leftAnkle,
-    _rightAnkle,
-  };
+  static const List<List<int>> _limbChains = [
+    [_leftShoulder, _leftElbow, _leftWrist],
+    [_rightShoulder, _rightElbow, _rightWrist],
+    [_leftHip, _leftKnee, _leftAnkle],
+    [_rightHip, _rightKnee, _rightAnkle],
+  ];
 
-  /// A skeleton segment longer than this multiple of shoulder/hip width
-  /// is treated as an implausible extrapolation rather than a real limb,
-  /// and its extremity endpoint is hidden instead of drawn.
+  static const List<List<int>> _symmetricPairs = [
+    [_leftElbow, _rightElbow],
+    [_leftWrist, _rightWrist],
+    [_leftKnee, _rightKnee],
+    [_leftAnkle, _rightAnkle],
+  ];
+
+  static const double _minPlausibleSegmentScale = 0.15;
   static const double _maxPlausibleSegmentScale = 4.0;
+  static const double _minPlausibleSymmetricSeparationScale = 0.2;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -269,7 +269,7 @@ class ReferenceAnalysisPainter extends CustomPainter {
 
     final pose = poseLandmarkPoints;
     if (pose != null) {
-      final suspectIndices = _findSuspectExtremities(pose);
+      final suspectIndices = _findSuspectLandmarks(pose);
 
       for (final connection in _skeletonConnections) {
         if (suspectIndices.contains(connection[0]) ||
@@ -303,32 +303,48 @@ class ReferenceAnalysisPainter extends CustomPainter {
     }
   }
 
-  /// Returns the indices of extremity landmarks (wrists/ankles) whose
-  /// distance from a directly-connected joint is implausibly large
-  /// relative to [_torsoScale] — a strong signal that ML Kit extrapolated
-  /// a position for a joint that's actually outside the photo, rather
-  /// than genuinely detecting it far from the body.
-  Set<int> _findSuspectExtremities(List<Offset?> pose) {
+  Set<int> _findSuspectLandmarks(List<Offset?> pose) {
     final scale = _torsoScale(pose);
     if (scale == null) return const {};
 
-    final maxPlausibleLength = scale * _maxPlausibleSegmentScale;
+    final maxLength = scale * _maxPlausibleSegmentScale;
+    final minLength = scale * _minPlausibleSegmentScale;
+    final minSeparation = scale * _minPlausibleSymmetricSeparationScale;
     final suspect = <int>{};
 
-    for (final connection in _skeletonConnections) {
-      final startIndex = connection[0];
-      final endIndex = connection[1];
-      final start = startIndex < pose.length ? pose[startIndex] : null;
-      final end = endIndex < pose.length ? pose[endIndex] : null;
-      if (start == null || end == null) continue;
+    Offset? point(int index) => index < pose.length ? pose[index] : null;
+    bool isUsable(Offset? p) => p != null && p.dx.isFinite && p.dy.isFinite;
 
-      final segmentLength = (end - start).distance;
-      if (segmentLength <= maxPlausibleLength) continue;
+    for (var i = 0; i < pose.length; i++) {
+      if (pose[i] != null && !isUsable(pose[i])) suspect.add(i);
+    }
 
-      if (_extremityLandmarks.contains(endIndex)) {
-        suspect.add(endIndex);
-      } else if (_extremityLandmarks.contains(startIndex)) {
-        suspect.add(startIndex);
+    for (final chain in _limbChains) {
+      for (var i = 0; i < chain.length - 1; i++) {
+        final fromIndex = chain[i];
+        final toIndex = chain[i + 1];
+        if (suspect.contains(fromIndex)) {
+          suspect.add(toIndex);
+          continue;
+        }
+        final from = point(fromIndex);
+        final to = point(toIndex);
+        if (!isUsable(from) || !isUsable(to)) continue;
+        final length = (to! - from!).distance;
+        if (length > maxLength || length < minLength) {
+          suspect.add(toIndex);
+        }
+      }
+    }
+
+    for (final pair in _symmetricPairs) {
+      if (suspect.contains(pair[0]) || suspect.contains(pair[1])) continue;
+      final a = point(pair[0]);
+      final b = point(pair[1]);
+      if (!isUsable(a) || !isUsable(b)) continue;
+      if ((b! - a!).distance < minSeparation) {
+        suspect.add(pair[0]);
+        suspect.add(pair[1]);
       }
     }
 
