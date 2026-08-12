@@ -226,57 +226,68 @@ class TrackingEngine {
   ) {
     final scores = <double>[];
 
-    if (current.shoulderAngleDegrees != null &&
-        target.shoulderAngleDegrees != null) {
-      final deviation = ComparisonMath.deviation(
-        current.shoulderAngleDegrees!,
-        target.shoulderAngleDegrees!,
-      );
-      final threshold = ComparisonMath.thresholdForPose(
-        tolerance.poseTolerance,
-      );
-      scores.add(
-        ComparisonMath.similarity(
-          deviation,
-          threshold,
-          ComparisonMath.maxDeviationForPose,
-        ),
-      );
-    }
-
-    if (current.faceAngleDegrees != null && target.faceAngleDegrees != null) {
-      final deviation = ComparisonMath.deviation(
-        current.faceAngleDegrees!,
-        target.faceAngleDegrees!,
-      );
-      final threshold = ComparisonMath.thresholdForPose(
-        tolerance.poseTolerance,
-      );
-      scores.add(
-        ComparisonMath.similarity(
-          deviation,
-          threshold,
-          ComparisonMath.maxDeviationForPose,
-        ),
-      );
-    }
-
-    if (current.bodyRatio != null && target.bodyRatio != null) {
-      final deviation = ComparisonMath.relativeDeviation(
-        current.bodyRatio!,
-        target.bodyRatio!,
-      );
-      if (deviation != null) {
-        final threshold = ComparisonMath.thresholdForPoseRatio(
+    if (target.shoulderAngleDegrees != null) {
+      if (current.shoulderAngleDegrees == null) {
+        scores.add(0.0);
+      } else {
+        final deviation = ComparisonMath.deviation(
+          current.shoulderAngleDegrees!,
+          target.shoulderAngleDegrees!,
+        );
+        final threshold = ComparisonMath.thresholdForPose(
           tolerance.poseTolerance,
         );
         scores.add(
           ComparisonMath.similarity(
             deviation,
             threshold,
-            ComparisonMath.maxDeviationForPoseRatio,
+            ComparisonMath.maxDeviationForPose,
           ),
         );
+      }
+    }
+
+    if (target.faceAngleDegrees != null) {
+      if (current.faceAngleDegrees == null) {
+        scores.add(0.0);
+      } else {
+        final deviation = ComparisonMath.deviation(
+          current.faceAngleDegrees!,
+          target.faceAngleDegrees!,
+        );
+        final threshold = ComparisonMath.thresholdForPose(
+          tolerance.poseTolerance,
+        );
+        scores.add(
+          ComparisonMath.similarity(
+            deviation,
+            threshold,
+            ComparisonMath.maxDeviationForPose,
+          ),
+        );
+      }
+    }
+
+    if (target.bodyRatio != null) {
+      if (current.bodyRatio == null) {
+        scores.add(0.0);
+      } else {
+        final deviation = ComparisonMath.relativeDeviation(
+          current.bodyRatio!,
+          target.bodyRatio!,
+        );
+        if (deviation != null) {
+          final threshold = ComparisonMath.thresholdForPoseRatio(
+            tolerance.poseTolerance,
+          );
+          scores.add(
+            ComparisonMath.similarity(
+              deviation,
+              threshold,
+              ComparisonMath.maxDeviationForPoseRatio,
+            ),
+          );
+        }
       }
     }
 

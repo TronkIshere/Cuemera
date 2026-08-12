@@ -156,3 +156,21 @@ On one test device (model "7 ZS67"), the default Impeller renderer produced visi
 - `environment.sdk: ^3.8.1` in `pubspec.yaml` doesn't match this doc's own Toolchain section (`^3.12.0`, from the Track-2/Gemma toolchain bump) — flagged, not changed, since bumping it blind could break `pub get` if the installed SDK doesn't actually satisfy `^3.12.0`.
 
 See `LIMITATIONS_AND_ROADMAP.md` for the rest of the open backlog (product decisions and physical-device-testing items unrelated to Track 1/2).
+
+## 9. Eighth session — shoulder-balance, shoulder-span, body-yaw coaching attributes
+
+**Goal:** `shoulderAngle` only tracked overall shoulder-line tilt, producing generic "square/angle your shoulders" phrasing. Added three attributes that let coaching distinguish per-side shoulder height asymmetry, shoulder width/spread, and torso rotation from face rotation.
+
+**New `CoachingAttribute` values** (`coaching_decision.dart`): `shoulderBalance`, `shoulderSpan`, `bodyYaw`. No changes needed to `dedupeKey` — the default branch already handles any attribute generically via direction+severity.
+
+**New derived metrics**, computed in `ReferenceImageAnalyzer._analyzePose` (reference-photo side only — see "Not yet done" below) and stored on both `SubjectProfile`/`ReferenceProfile`:
+- `shoulderBalanceRatio` — `(leftShoulder.y - rightShoulder.y) / shoulderWidthPx`. Positive means the left shoulder sits lower.
+- `shoulderSpanRatio` — shoulder width normalized by torso height (shoulder-midpoint to hip-midpoint distance), gated on both hip landmarks clearing `_minLandmarkLikelihood`. `_analyzePose` now also extracts `rightHip` (previously only `leftHip` was read).
+- `bodyYawEstimate` — torso rotation in degrees, `atan2(rightShoulder.z - leftShoulder.z, rightShoulder.x - leftShoulder.x) * 180 / pi`. Uses ML Kit's *experimental* pose-landmark z-depth (same unit as x/y, origin at the hip; Google's docs call it less accurate than x/y) rather than a foreshortening heuristic, since z is directly available on this plugin's `PoseLandmark`.
+
+**New evaluators** in `ReferenceComparisonEngine` (`_evaluateShoulderBalance`, `_evaluateShoulderSpan`, `_evaluateBodyYaw`), wired into `poseAndFaceTier`. Two new flags, `_shoulderBalanceDirectionIsMirrored` and `_bodyYawDirectionIsMirrored` (both default `false`), follow the same unverified-pending-device-test pattern as `_faceRollDirectionIsMirrored`. `_evaluateShoulderBalance`/`_evaluateBodyYaw` name `direction` after which side the *correction* acts on ("lift your left shoulder", "turn your body left") rather than the side of excess deviation — a deliberate difference from `_evaluateFaceRoll`'s diagnostic-direction convention, noted inline where it's easy to miss.
+
+**Not yet done:**
+- **Live-camera side isn't wired.** `SubjectProfile` has the three new fields, but nothing populates them from the live pose stream yet — that requires updating wherever `SubjectProfile` is built from `MlKitService`'s pose output (`PoseAnalyzer` → `TrackingEngine.smoothSubject`, per the data-flow diagram in §2), mirroring the same landmark math just added to `ReferenceImageAnalyzer._analyzePose`. Until then the three new evaluators compile and null-check-skip cleanly, but never fire during a live session.
+- **No test coverage yet** for the three new evaluators — needs `reference_comparison_engine_test.dart`'s existing conventions to match against.
+- Device verification for the two new mirroring flags and `bodyYawEstimate`'s z-depth derivation — see `LIMITATIONS_AND_ROADMAP.md` §1.

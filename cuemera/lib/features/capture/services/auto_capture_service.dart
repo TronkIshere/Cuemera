@@ -23,6 +23,13 @@ class AutoCaptureService {
     // every capture once the signal went permanently null.
     if (scene.brightness < thresholds.minBrightnessForCapture) return false;
 
+    // For each _xOk check below: reference null means the attribute isn't
+    // part of what we're matching (auto-pass). Subject null with a
+    // non-null reference means we can't currently measure it — e.g. the
+    // subject's shoulders/hips aren't in frame — and that must block
+    // capture, not silently pass, or a close-up-only framing bypasses
+    // pose matching entirely.
+
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
     final faceOk = _faceOk(subject, reference, tolerance);
     final facePitchOk = _facePitchOk(subject, reference, tolerance);
@@ -108,9 +115,10 @@ class AutoCaptureService {
     ReferenceProfile reference,
     ToleranceSettings tolerance,
   ) {
-    final subjectValue = subject.shoulderAngleDegrees;
     final referenceValue = reference.shoulderAngleDegrees;
-    if (subjectValue == null || referenceValue == null) return true;
+    if (referenceValue == null) return true;
+    final subjectValue = subject.shoulderAngleDegrees;
+    if (subjectValue == null) return false;
 
     final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
@@ -167,9 +175,10 @@ class AutoCaptureService {
     ReferenceProfile reference,
     ToleranceSettings tolerance,
   ) {
-    final subjectValue = subject.bodyRatio;
     final referenceValue = reference.bodyRatio;
-    if (subjectValue == null || referenceValue == null) return true;
+    if (referenceValue == null) return true;
+    final subjectValue = subject.bodyRatio;
+    if (subjectValue == null) return false;
 
     final deviation = ComparisonMath.relativeDeviation(
       subjectValue,
@@ -188,9 +197,10 @@ class AutoCaptureService {
     ReferenceProfile reference,
     ToleranceSettings tolerance,
   ) {
-    final subjectValue = subject.mouthOpenRatio;
     final referenceValue = reference.mouthOpenRatio;
-    if (subjectValue == null || referenceValue == null) return true;
+    if (referenceValue == null) return true;
+    final subjectValue = subject.mouthOpenRatio;
+    if (subjectValue == null) return false;
 
     final deviation = ComparisonMath.relativeDeviation(
       subjectValue,
