@@ -38,7 +38,11 @@ class ReferenceComparisonEngine {
         .toList();
     if (exceeding.isEmpty) return null;
 
-    exceeding.sort((a, b) => b.severity.compareTo(a.severity));
+    exceeding.sort(
+      (a, b) => b.decision.normalizedSeverity.compareTo(
+        a.decision.normalizedSeverity,
+      ),
+    );
     final worst = exceeding.first;
 
     return PriorityAction(
