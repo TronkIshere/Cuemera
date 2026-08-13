@@ -3,7 +3,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:cuemera/features/reference_photo/domain/models/reference_profile.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show HSLColor, Offset;
 import 'package:flutter/painting.dart' show FileImage;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -12,9 +13,12 @@ import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentatio
 import 'package:image/image.dart' as img;
 import 'package:palette_generator/palette_generator.dart';
 
+import '../../../core/pose/landmark_gate.dart';
 import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/expression_classifier.dart';
 import '../domain/comparison_math.dart';
+import 'landmark_trust_classifier.dart';
+import 'reference_photo_crop_redetect.dart';
 
 class _PoseAnalysisResult {
   final double? bodyRatio;
@@ -98,19 +102,8 @@ class _PaletteAnalysisResult {
 }
 
 class ReferenceImageAnalyzer {
-  static const double _minLandmarkLikelihood = 0.6;
-
-  /// Same guard as `ReferenceAnalysisPainter._findSuspectExtremities` in
-  /// `reference_picker_sheet.dart` (see LIMITATIONS_AND_ROADMAP.md /
-  /// FILE_REFERENCE.md): a wrist/ankle landmark can pass the likelihood
-  /// check above yet still sit at a wildly extrapolated position when the
-  /// reference photo is framed to cut off before that joint. `bodyRatio`
-  /// used to trust the ankle position outright once it cleared
-  /// `_minLandmarkLikelihood`, so a partial-body photo could silently
-  /// skew scoring/tracking. This mirrors the preview's fix: an ankle more
-  /// than 4x the shoulder-width scale away from the hip is treated as an
-  /// unreliable extrapolation and `bodyRatio` is left null rather than
-  /// computed from it.
+  /// Hip-to-ankle guard, kept alongside `PoseLandmarkGate`'s
+  /// knee-to-ankle segment budgets: the two catch different framings.
   static const double _maxExtremityExtrapolationMultiplier = 4.0;
 
   Future<ReferenceProfile> analyze(String imagePath) async {
@@ -120,18 +113,24 @@ class ReferenceImageAnalyzer {
     // concurrently instead of sequentially. Only the mask-dependent scores
     // below (which need both `mask` and `decoded`) wait on more than one.
     final results = await Future.wait<Object?>([
-      _analyzePose(inputImage),
+      _detectPose(inputImage),
       _analyzeFace(inputImage),
       _runSegmentation(inputImage),
       _decodeImageFile(imagePath),
       _analyzePalette(imagePath),
     ]);
 
-    final poseResult = results[0] as _PoseAnalysisResult;
+    final landmarks = results[0] as Map<PoseLandmarkType, PoseLandmark>?;
     final faceResult = results[1] as _FaceAnalysisResult;
     final mask = results[2] as SegmentationMask?;
     final decodedResult = results[3] as _DecodedImageResult;
     final paletteResult = results[4] as _PaletteAnalysisResult;
+
+    final poseResult = await _derivePose(
+      landmarks: landmarks,
+      mask: mask,
+      decodedResult: decodedResult,
+    );
 
     double? negativeSpaceScore;
     double? symmetryScore;
@@ -157,6 +156,17 @@ class ReferenceImageAnalyzer {
     double? overallBrightness;
     if (decodedResult.decoded != null) {
       overallBrightness = estimateBrightness(decodedResult.decoded!);
+    }
+
+    if (kDebugMode) {
+      final trustedPoints =
+          poseResult.poseLandmarkPoints?.where((p) => p != null).length ?? 0;
+      debugPrint(
+        'ReferenceImageAnalyzer analyze: path=$imagePath outcome '
+        'poseDetected=${landmarks != null && landmarks.isNotEmpty} '
+        'trustedPoints=$trustedPoints/${kGatedLandmarkOrder.length} '
+        'faceDetected=${faceResult.faceContourPoints != null}',
+      );
     }
 
     return ReferenceProfile(
@@ -199,118 +209,14 @@ class ReferenceImageAnalyzer {
     );
   }
 
-  Future<_PoseAnalysisResult> _analyzePose(InputImage inputImage) async {
-    double? bodyRatio;
-    double? shoulderAngleDegrees;
-    double? shoulderBalanceRatio;
-    double? shoulderSpanRatio;
-    double? bodyYawEstimate;
-    List<Offset?>? poseLandmarkPoints;
+  Future<Map<PoseLandmarkType, PoseLandmark>?> _detectPose(
+    InputImage inputImage,
+  ) async {
+    Map<PoseLandmarkType, PoseLandmark>? landmarks;
     final poseDetector = PoseDetector(options: PoseDetectorOptions());
     try {
       final poses = await poseDetector.processImage(inputImage);
-      if (poses.isNotEmpty) {
-        final landmarks = poses.first.landmarks;
-        final leftShoulder = landmarks[PoseLandmarkType.leftShoulder];
-        final rightShoulder = landmarks[PoseLandmarkType.rightShoulder];
-        final leftHip = landmarks[PoseLandmarkType.leftHip];
-        final rightHip = landmarks[PoseLandmarkType.rightHip];
-        final leftAnkle = landmarks[PoseLandmarkType.leftAnkle];
-        final nose = landmarks[PoseLandmarkType.nose];
-
-        double? torsoScale;
-        if (leftShoulder != null && rightShoulder != null) {
-          final dy = rightShoulder.y - leftShoulder.y;
-          final dx = rightShoulder.x - leftShoulder.x;
-          shoulderAngleDegrees = atan2(dy, dx) * 180 / pi;
-          torsoScale = sqrt(dx * dx + dy * dy);
-
-          // Sign convention: positive means the left shoulder sits lower
-          // (larger y) than the right. Normalized by shoulder-width so
-          // it stays scale-invariant regardless of subject distance.
-          shoulderBalanceRatio = torsoScale > 0
-              ? (leftShoulder.y - rightShoulder.y) / torsoScale
-              : null;
-
-          // z is ML Kit's experimental depth value (same unit as x/y,
-          // origin at the hip, "less accurate than x and y" per Google's
-          // docs). This mirrors the shoulderAngleDegrees formula above
-          // but swaps y for z, so a rotated torso (one shoulder closer to
-          // camera) reads as a nonzero angle. Left/right sign is
-          // unverified on a physical device — see
-          // ReferenceComparisonEngine._bodyYawDirectionIsMirrored.
-          bodyYawEstimate =
-              atan2(rightShoulder.z - leftShoulder.z, dx) * 180 / pi;
-
-          if (leftHip != null &&
-              rightHip != null &&
-              leftHip.likelihood >= _minLandmarkLikelihood &&
-              rightHip.likelihood >= _minLandmarkLikelihood) {
-            final shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
-            final shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
-            final hipMidX = (leftHip.x + rightHip.x) / 2;
-            final hipMidY = (leftHip.y + rightHip.y) / 2;
-            final torsoHeight = sqrt(
-              pow(hipMidX - shoulderMidX, 2) + pow(hipMidY - shoulderMidY, 2),
-            );
-            // Shoulder width relative to torso height: bigger means
-            // broader/more spread shoulders, smaller means narrower/
-            // hunched, independent of the subject's distance from camera.
-            shoulderSpanRatio = torsoHeight > 0
-                ? torsoScale / torsoHeight
-                : null;
-          }
-        }
-
-        final noseConfident =
-            nose != null && nose.likelihood >= _minLandmarkLikelihood;
-        final leftHipConfident =
-            leftHip != null && leftHip.likelihood >= _minLandmarkLikelihood;
-        final leftAnkleConfident =
-            leftAnkle != null && leftAnkle.likelihood >= _minLandmarkLikelihood;
-
-        if (noseConfident && leftHipConfident && leftAnkleConfident) {
-          final upperLength = (leftHip.y - nose.y).abs();
-          final lowerLength = (leftAnkle.y - leftHip.y).abs();
-          // Bug fix: likelihood alone doesn't catch a confidently-reported
-          // but implausibly-extrapolated ankle (e.g. a half-body reference
-          // photo). Skip bodyRatio for this frame rather than silently
-          // computing it from a bad position.
-          final ankleExtrapolationSuspect =
-              torsoScale != null &&
-              torsoScale > 0 &&
-              lowerLength > _maxExtremityExtrapolationMultiplier * torsoScale;
-          if (lowerLength > 0 && !ankleExtrapolationSuspect) {
-            bodyRatio = upperLength / lowerLength;
-          }
-        }
-
-        const landmarkTypesToDraw = [
-          PoseLandmarkType.nose,
-          PoseLandmarkType.leftEye,
-          PoseLandmarkType.rightEye,
-          PoseLandmarkType.leftShoulder,
-          PoseLandmarkType.rightShoulder,
-          PoseLandmarkType.leftElbow,
-          PoseLandmarkType.rightElbow,
-          PoseLandmarkType.leftWrist,
-          PoseLandmarkType.rightWrist,
-          PoseLandmarkType.leftHip,
-          PoseLandmarkType.rightHip,
-          PoseLandmarkType.leftKnee,
-          PoseLandmarkType.rightKnee,
-          PoseLandmarkType.leftAnkle,
-          PoseLandmarkType.rightAnkle,
-        ];
-        final points = <Offset?>[];
-        for (final type in landmarkTypesToDraw) {
-          final landmark = landmarks[type];
-          final isConfident =
-              landmark != null && landmark.likelihood >= _minLandmarkLikelihood;
-          points.add(isConfident ? Offset(landmark.x, landmark.y) : null);
-        }
-        if (points.any((p) => p != null)) poseLandmarkPoints = points;
-      }
+      if (poses.isNotEmpty) landmarks = poses.first.landmarks;
     } catch (e, st) {
       ErrorReportingService.instance.report(
         e,
@@ -320,6 +226,125 @@ class ReferenceImageAnalyzer {
     } finally {
       await poseDetector.close();
     }
+    return landmarks;
+  }
+
+  Future<_PoseAnalysisResult> _derivePose({
+    required Map<PoseLandmarkType, PoseLandmark>? landmarks,
+    required SegmentationMask? mask,
+    required _DecodedImageResult decodedResult,
+  }) async {
+    if (landmarks == null || landmarks.isEmpty) {
+      return const _PoseAnalysisResult();
+    }
+
+    final imageWidth = decodedResult.imageWidth;
+    final imageHeight = decodedResult.imageHeight;
+
+    final likelihoodGate = PoseLandmarkGate.fromLandmarks(landmarks: landmarks);
+
+    var maskSignal = MaskTrustSignal.none;
+    if (mask != null && imageWidth != null && imageHeight != null) {
+      maskSignal = sampleMaskTrust(
+        points: likelihoodGate.confidentPoints,
+        mask: mask,
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
+      );
+    }
+
+    var gate = maskSignal.bypassed
+        ? likelihoodGate
+        : PoseLandmarkGate.fromLandmarks(
+            landmarks: landmarks,
+            maskSignal: maskSignal,
+          );
+
+    if (kDebugMode) {
+      debugPrint('ReferenceImageAnalyzer ${gate.describe()}');
+    }
+
+    // Phase 2 (REFERENCE_TRUST_FILTER_SOLUTION.md): if enough extremities
+    // are still untrusted after Phase 0/1, and there's a mask and a decoded
+    // bitmap to crop, try recovering them from a second detection pass on
+    // just the subject's bounding box -- see
+    // reference_photo_crop_redetect.dart. A photo with no mask (e.g.
+    // segmentation itself failed) or no decoded bitmap (decode failed)
+    // simply skips this and keeps the Phase 0/1 result, same as before.
+    if (mask != null && decodedResult.decoded != null) {
+      final outcome = await reconcileWithCrop(
+        originalGate: gate,
+        decoded: decodedResult.decoded!,
+        mask: mask,
+      );
+      if (outcome.changedAnyLandmark) gate = outcome.gate;
+    }
+
+    double? shoulderAngleDegrees;
+    double? torsoScale;
+    double? shoulderBalanceRatio;
+    double? shoulderSpanRatio;
+    double? bodyYawEstimate;
+    double? bodyRatio;
+
+    final leftShoulder = gate.landmark(PoseLandmarkType.leftShoulder);
+    final rightShoulder = gate.landmark(PoseLandmarkType.rightShoulder);
+
+    if (leftShoulder != null && rightShoulder != null) {
+      final dy = rightShoulder.y - leftShoulder.y;
+      final dx = rightShoulder.x - leftShoulder.x;
+      shoulderAngleDegrees = atan2(dy, dx) * 180 / pi;
+      final scale = sqrt(dx * dx + dy * dy);
+      torsoScale = scale;
+
+      // Sign convention: positive means the left shoulder sits lower
+      // (larger y) than the right. Normalized by shoulder-width so it
+      // stays scale-invariant regardless of subject distance.
+      shoulderBalanceRatio = scale > 0
+          ? (leftShoulder.y - rightShoulder.y) / scale
+          : null;
+
+      // z is ML Kit's experimental depth value (same unit as x/y, origin
+      // at the hip, "less accurate than x and y" per Google's docs). This
+      // mirrors the shoulderAngleDegrees formula above but swaps y for z,
+      // so a rotated torso (one shoulder closer to camera) reads as a
+      // nonzero angle. Left/right sign is unverified on a physical device
+      // — see ReferenceComparisonEngine._bodyYawDirectionIsMirrored.
+      bodyYawEstimate = atan2(rightShoulder.z - leftShoulder.z, dx) * 180 / pi;
+
+      final leftHip = gate.landmark(PoseLandmarkType.leftHip);
+      final rightHip = gate.landmark(PoseLandmarkType.rightHip);
+      if (leftHip != null && rightHip != null) {
+        final shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
+        final shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
+        final hipMidX = (leftHip.x + rightHip.x) / 2;
+        final hipMidY = (leftHip.y + rightHip.y) / 2;
+        final torsoHeight = sqrt(
+          pow(hipMidX - shoulderMidX, 2) + pow(hipMidY - shoulderMidY, 2),
+        );
+        // Shoulder width relative to torso height: bigger means broader/
+        // more spread shoulders, smaller means narrower/hunched,
+        // independent of the subject's distance from camera.
+        shoulderSpanRatio = torsoHeight > 0 ? scale / torsoHeight : null;
+      }
+    }
+
+    final nose = gate.landmark(PoseLandmarkType.nose);
+    final bodyRatioHip = gate.landmark(PoseLandmarkType.leftHip);
+    final leftAnkle = gate.landmark(PoseLandmarkType.leftAnkle);
+
+    if (nose != null && bodyRatioHip != null && leftAnkle != null) {
+      final upperLength = (bodyRatioHip.y - nose.y).abs();
+      final lowerLength = (leftAnkle.y - bodyRatioHip.y).abs();
+      final scale = torsoScale;
+      final ankleExtrapolationSuspect =
+          scale != null &&
+          scale > 0 &&
+          lowerLength > _maxExtremityExtrapolationMultiplier * scale;
+      if (lowerLength > 0 && !ankleExtrapolationSuspect) {
+        bodyRatio = upperLength / lowerLength;
+      }
+    }
 
     return _PoseAnalysisResult(
       bodyRatio: bodyRatio,
@@ -327,7 +352,7 @@ class ReferenceImageAnalyzer {
       shoulderBalanceRatio: shoulderBalanceRatio,
       shoulderSpanRatio: shoulderSpanRatio,
       bodyYawEstimate: bodyYawEstimate,
-      poseLandmarkPoints: poseLandmarkPoints,
+      poseLandmarkPoints: gate.hasTrustedPoints ? gate.trustedPoints : null,
     );
   }
 
@@ -488,6 +513,21 @@ class ReferenceImageAnalyzer {
     double? imageHeight;
     try {
       final bytes = await File(imagePath).readAsBytes();
+      if (kDebugMode) {
+        // LIMITATIONS_AND_ROADMAP.md §"Possible non-determinism": the same
+        // source photo, picked twice, was once seen to produce two
+        // different outcomes. Before chasing a provider race, check
+        // whether the two picks are even the same bytes -- image_picker
+        // frequently writes a fresh temp path per pick, sometimes with
+        // re-encoding, even for the identical gallery asset. Log a cheap
+        // fingerprint alongside the raw detection output on each pass; if
+        // two repeated picks show different fingerprints, this was never a
+        // state bug.
+        debugPrint(
+          'ReferenceImageAnalyzer analyze: path=$imagePath '
+          'bytes=${bytes.length} fingerprint=${_cheapFingerprint(bytes)}',
+        );
+      }
       final rawDecoded = img.decodeImage(bytes);
       if (rawDecoded != null) {
         // img.decodeImage() reads raw sensor-orientation pixels and does
@@ -516,6 +556,19 @@ class ReferenceImageAnalyzer {
       imageWidth: imageWidth,
       imageHeight: imageHeight,
     );
+  }
+
+  /// Not a real hash — a cheap rolling checksum over the byte length plus a
+  /// sparse sample of the file, only meant to tell "same picked file twice"
+  /// apart from "different file, same photo" in a debug log. Don't use this
+  /// for anything that needs actual collision resistance.
+  String _cheapFingerprint(List<int> bytes) {
+    var acc = bytes.length;
+    final step = bytes.length > 4096 ? bytes.length ~/ 4096 : 1;
+    for (var i = 0; i < bytes.length; i += step) {
+      acc = (acc * 31 + bytes[i]) & 0x7fffffff;
+    }
+    return acc.toRadixString(16);
   }
 
   Future<_PaletteAnalysisResult> _analyzePalette(String imagePath) async {
