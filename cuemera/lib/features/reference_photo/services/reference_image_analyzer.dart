@@ -208,7 +208,9 @@ class ReferenceImageAnalyzer {
     InputImage inputImage,
   ) async {
     Map<PoseLandmarkType, PoseLandmark>? landmarks;
-    final poseDetector = PoseDetector(options: PoseDetectorOptions());
+    final poseDetector = PoseDetector(
+      options: PoseDetectorOptions(model: PoseDetectionModel.accurate),
+    );
     try {
       final poses = await poseDetector.processImage(inputImage);
       if (poses.isNotEmpty) landmarks = poses.first.landmarks;

@@ -239,20 +239,15 @@ class ReferenceAnalysisPainter extends CustomPainter {
     if (pose == null) {
       if (kDebugMode) debugPrint('ReferenceAnalysisPainter pose=null');
     } else {
-      final gate = PoseLandmarkGate.fromPoints(pose);
-      if (kDebugMode) {
-        debugPrint('ReferenceAnalysisPainter ${gate.describe()}');
-      }
-
       for (final connection in _skeletonConnections) {
-        final start = gate.point(connection[0]);
-        final end = gate.point(connection[1]);
+        final start = usablePointAt(pose, connection[0]);
+        final end = usablePointAt(pose, connection[1]);
         if (start != null && end != null) {
           canvas.drawLine(mapPoint(start), mapPoint(end), linePaint);
         }
       }
       for (var i = 0; i < kGatedLandmarkOrder.length; i++) {
-        final point = gate.point(i);
+        final point = usablePointAt(pose, i);
         if (point != null) {
           canvas.drawCircle(mapPoint(point), 3, pointPaint);
         }

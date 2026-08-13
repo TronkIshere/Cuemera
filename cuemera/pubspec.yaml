@@ -9,29 +9,54 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # UI / Flutter
   cupertino_icons: ^1.0.8
+
+  # Camera / Image
   camera: ^0.11.0+2
-  google_mlkit_pose_detection: ^0.13.0
-  google_mlkit_face_detection: ^0.12.0
-  google_mlkit_selfie_segmentation: ^0.9.0
-  flutter_tts: ^4.2.0
+  image: ^4.2.0
+  image_picker: ^1.1.2
+  gal: ^2.3.0
+  palette_generator: ^0.3.3+3
+
+  # Google ML Kit — POSE / VISION
+
+  # Main pose estimation
+  google_mlkit_pose_detection: ^0.15.0
+
+  # Face landmarks / head verification
+  google_mlkit_face_detection: ^0.14.0
+
+  # Person/background segmentation
+  google_mlkit_selfie_segmentation: ^0.11.0
+
+  # Shared ML Kit infrastructure
+  google_mlkit_commons: ^0.12.0
+
+  # State Management
   flutter_riverpod: ^2.6.1
+
+  # Local Storage
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  path_provider: ^2.1.5
   shared_preferences: ^2.3.4
+  path_provider: ^2.1.5
+
+  # Permissions
   permission_handler: ^11.3.1
-  google_mlkit_commons: ^0.9.0
-  gal: ^2.3.0
-  image: ^4.2.0
-  palette_generator: ^0.3.3+3
-  image_picker: ^1.1.2
-  flutter_launcher_icons: ^0.14.1
+
+  # Text To Speech / Audio
+  flutter_tts: ^4.2.0
+  audioplayers: ^6.0.0
+  sherpa_onnx: ^1.12.11
+
+  # On-device LLM / AI
   flutter_gemma: ^1.5.2
   flutter_gemma_mediapipe: ^1.0.0
 
-  sherpa_onnx: ^1.12.11
-  audioplayers: ^6.0.0
+  # App / Build
+  flutter_launcher_icons: ^0.14.1
 
 flutter_launcher_icons:
   android: true
@@ -52,3 +77,39 @@ flutter:
     - assets/images/
     - assets/models/vits-en/
     - assets/models/vits-en/espeak-ng-data/
+    - assets/models/vits-en/espeak-ng-data/lang/
+    - assets/models/vits-en/espeak-ng-data/lang/aav/
+    - assets/models/vits-en/espeak-ng-data/lang/art/
+    - assets/models/vits-en/espeak-ng-data/lang/azc/
+    - assets/models/vits-en/espeak-ng-data/lang/bat/
+    - assets/models/vits-en/espeak-ng-data/lang/bnt/
+    - assets/models/vits-en/espeak-ng-data/lang/ccs/
+    - assets/models/vits-en/espeak-ng-data/lang/cel/
+    - assets/models/vits-en/espeak-ng-data/lang/cus/
+    - assets/models/vits-en/espeak-ng-data/lang/dra/
+    - assets/models/vits-en/espeak-ng-data/lang/esx/
+    - assets/models/vits-en/espeak-ng-data/lang/gmq/
+    - assets/models/vits-en/espeak-ng-data/lang/gmw/
+    - assets/models/vits-en/espeak-ng-data/lang/grk/
+    - assets/models/vits-en/espeak-ng-data/lang/inc/
+    - assets/models/vits-en/espeak-ng-data/lang/ine/
+    - assets/models/vits-en/espeak-ng-data/lang/ira/
+    - assets/models/vits-en/espeak-ng-data/lang/iro/
+    - assets/models/vits-en/espeak-ng-data/lang/itc/
+    - assets/models/vits-en/espeak-ng-data/lang/jpx/
+    - assets/models/vits-en/espeak-ng-data/lang/map/
+    - assets/models/vits-en/espeak-ng-data/lang/miz/
+    - assets/models/vits-en/espeak-ng-data/lang/myn/
+    - assets/models/vits-en/espeak-ng-data/lang/poz/
+    - assets/models/vits-en/espeak-ng-data/lang/roa/
+    - assets/models/vits-en/espeak-ng-data/lang/sai/
+    - assets/models/vits-en/espeak-ng-data/lang/sem/
+    - assets/models/vits-en/espeak-ng-data/lang/sit/
+    - assets/models/vits-en/espeak-ng-data/lang/tai/
+    - assets/models/vits-en/espeak-ng-data/lang/trk/
+    - assets/models/vits-en/espeak-ng-data/lang/urj/
+    - assets/models/vits-en/espeak-ng-data/lang/zle/
+    - assets/models/vits-en/espeak-ng-data/lang/zls/
+    - assets/models/vits-en/espeak-ng-data/lang/zlw/
+    - assets/models/vits-en/espeak-ng-data/voices/
+    - "assets/models/vits-en/espeak-ng-data/voices/!v/"
