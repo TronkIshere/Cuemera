@@ -174,3 +174,27 @@ See `LIMITATIONS_AND_ROADMAP.md` for the rest of the open backlog (product decis
 - **Live-camera side isn't wired.** `SubjectProfile` has the three new fields, but nothing populates them from the live pose stream yet — that requires updating wherever `SubjectProfile` is built from `MlKitService`'s pose output (`PoseAnalyzer` → `TrackingEngine.smoothSubject`, per the data-flow diagram in §2), mirroring the same landmark math just added to `ReferenceImageAnalyzer._analyzePose`. Until then the three new evaluators compile and null-check-skip cleanly, but never fire during a live session.
 - **No test coverage yet** for the three new evaluators — needs `reference_comparison_engine_test.dart`'s existing conventions to match against.
 - Device verification for the two new mirroring flags and `bodyYawEstimate`'s z-depth derivation — see `LIMITATIONS_AND_ROADMAP.md` §1.
+
+## 10. Ninth session — live analysis pipeline performance pass
+
+**Goal:** user reported the camera screen pinned at ~20-22fps. Root cause: `analyzeLight()` (`LightAnalyzer`) runs synchronously on the main isolate inside the camera image-stream callback every throttled frame (~80ms) — a slow callback return makes CameraX itself throttle frame delivery, so the reported fps is the camera's delivery rate degrading in response, not a render-fps ceiling. Didn't move analysis off the main isolate (the real fix — needs `CameraImage` transfer via `TransferableTypedData`, too large/unverified a change for this pass) — this session cuts the synchronous work on the path instead.
+
+**`light_analyzer.dart`** — five separate near-full pixel scans per frame (`_computeSubjectRatio` unsampled over the whole mask, `_computeBackgroundVariance`, `_estimateLightDirection`, `_estimateSymmetry`, plus brightness/color-tone sampling) collapsed into two:
+- `_analyzeMask` — one subsampled pass (step 4) over the segmentation mask, producing both `subjectRatio` and left/right subject pixel counts for symmetry.
+- `_analyzeLumaPlane` — one subsampled pass (step 6) over the luma plane, producing both `lightDirectionDegrees` and `backgroundVariance`.
+
+Rough combined iteration count at 720p: ~115k/frame → ~35k/frame.
+
+**Bug fixed in the same pass** (found while merging, not hunted intentionally): the old `_computeBackgroundVariance` indexed the segmentation mask with the image's own `(x, y)` directly (`y * maskWidth + x`), with no scale correction between image resolution and the (typically much smaller) mask resolution — `reference_image_analyzer.dart`'s equivalent code already scales correctly, this one didn't. In practice the "background-only" pixel filter was reading effectively unrelated mask pixels. `_analyzeLumaPlane` now scales image `(x, y)` into mask space (`maskScaleX`/`maskScaleY`) before sampling. This changes the actual value of `backgroundClutterCount`, which feeds `AutoCaptureService._backgroundOk` and the editorial score's background component — needs a device pass to confirm nothing downstream needs re-tuning as a result.
+
+**`scene_providers.dart`** — `targetSubjectProfileProvider` watched `subjectProfileProvider` into an unused local, forcing a provider rebuild (and everything downstream: `trackingProgressProvider`, `shouldCaptureProvider`) on every subject update for no reason. Removed.
+
+**`camera_screen.dart`** — `currentScoreProvider` was watched at the top of `_buildReadyBody` but only consumed by `ScoreBadge`, which doesn't render until after a capture — meant the entire `Stack`, including `CameraPreviewLayer`, rebuilt on every scene update. Moved the watch into a local `Consumer` scoped to just the `ScoreBadge` slot.
+
+**`face_analyzer.dart`** — `classifyExpression()` was called unconditionally every frame and its result discarded when `enableEyeAndExpressionSignals` is `false` (the current permanent state per §3). Now only called when the flag is on.
+
+**`ml_kit_service.dart`** — `processImage()`'s pose/face/segmentation calls started concurrently (previously three sequential `await`s) — same pattern `ReferenceImageAnalyzer.analyze()` already uses. Same caveat applies here as there: ML Kit's native platform-channel bindings may serialize these calls internally regardless of Dart-level concurrency, so the real-world win needs device measurement, not assumed from the source change alone.
+
+**Not touched, flagged instead:** `_estimateBrightness` samples using `bytes.length` directly rather than respecting `bytesPerRow`, so it also walks each row's padding bytes — slightly skews the average feeding `minBrightnessForCapture`. Left alone since fixing it changes that threshold's effective behavior and needs a real-device check, not bundled into a perf pass.
+
+Verify with `LightAnalyzer.debugLogFrameTiming = true` before/after on a real device for actual before/after numbers — not measured against real hardware as part of this pass.

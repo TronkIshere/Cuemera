@@ -58,9 +58,9 @@ class MlKitService {
 
   @visibleForTesting
   InputImageRotation? rotationFor(
-    CameraDescription description,
-    DeviceOrientation deviceOrientation,
-  ) {
+      CameraDescription description,
+      DeviceOrientation deviceOrientation,
+      ) {
     if (Platform.isIOS) {
       return InputImageRotationValue.fromRawValue(
         description.sensorOrientation,
@@ -82,10 +82,10 @@ class MlKitService {
   }
 
   Future<void> processImage(
-    CameraImage image,
-    CameraDescription description,
-    DeviceOrientation deviceOrientation,
-  ) async {
+      CameraImage image,
+      CameraDescription description,
+      DeviceOrientation deviceOrientation,
+      ) async {
     if (_busy) return;
     _busy = true;
 
@@ -96,9 +96,13 @@ class MlKitService {
       final inputImage = _toInputImage(image, rotation);
       if (inputImage == null) return;
 
-      final poses = await _poseDetector.processImage(inputImage);
-      final faces = await _faceDetector.processImage(inputImage);
-      final mask = await _segmenter.processImage(inputImage);
+      final posesFuture = _poseDetector.processImage(inputImage);
+      final facesFuture = _faceDetector.processImage(inputImage);
+      final maskFuture = _segmenter.processImage(inputImage);
+
+      final poses = await posesFuture;
+      final faces = await facesFuture;
+      final mask = await maskFuture;
 
       _resultController.add(
         MlKitAnalysisResult(poses: poses, faces: faces, segmentationMask: mask),
