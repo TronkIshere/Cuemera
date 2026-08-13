@@ -35,11 +35,11 @@ class LightAnalyzer {
   int? lastAnalyzeLightMicros;
 
   SceneProfile analyzeLight(
-      dynamic cameraFrame,
-      SceneProfile previous, {
-        SegmentationMask? segmentationMask,
-        SubjectProfile? subject,
-      }) {
+    dynamic cameraFrame,
+    SceneProfile previous, {
+    SegmentationMask? segmentationMask,
+    SubjectProfile? subject,
+  }) {
     final image = cameraFrame as CameraImage?;
     if (image == null) return previous;
 
@@ -81,15 +81,25 @@ class LightAnalyzer {
   double _estimateBrightness(CameraImage image) {
     final plane = image.planes.first;
     final bytes = plane.bytes;
-    if (bytes.isEmpty) return 0.5;
+    final width = image.width;
+    final height = image.height;
+    final bytesPerRow = plane.bytesPerRow;
+    if (bytes.isEmpty || width <= 0 || height <= 0) return 0.5;
 
-    final sampleStep = (bytes.length / 2000).clamp(1, bytes.length).toInt();
+    final step = math.sqrt((width * height) / 2000).round().clamp(1, width);
+
     int sum = 0;
     int count = 0;
 
-    for (var i = 0; i < bytes.length; i += sampleStep) {
-      sum += bytes[i];
-      count++;
+    for (var y = 0; y < height; y += step) {
+      final rowOffset = y * bytesPerRow;
+      if (rowOffset >= bytes.length) continue;
+      for (var x = 0; x < width; x += step) {
+        final index = rowOffset + x;
+        if (index >= bytes.length) continue;
+        sum += bytes[index];
+        count++;
+      }
     }
 
     if (count == 0) return 0.5;
@@ -315,10 +325,10 @@ class LightAnalyzer {
     if (debugLogColorToneSamples) {
       debugPrint(
         '[LightAnalyzer] colorTone sample — '
-            'avgU: ${avgU.toStringAsFixed(1)}, '
-            'avgV: ${avgV.toStringAsFixed(1)}, '
-            'hue: ${hue.toStringAsFixed(1)}, '
-            'warmth: ${warmth.toStringAsFixed(2)}',
+        'avgU: ${avgU.toStringAsFixed(1)}, '
+        'avgV: ${avgV.toStringAsFixed(1)}, '
+        'hue: ${hue.toStringAsFixed(1)}, '
+        'warmth: ${warmth.toStringAsFixed(2)}',
       );
     }
 

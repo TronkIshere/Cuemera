@@ -21,7 +21,7 @@ import '../../../album/providers/album_providers.dart';
 import '../../../capture/domain/shot_builder.dart';
 import '../../../capture/presentation/widgets/shot_type_picker_sheet.dart';
 import '../../../capture/providers/capture_providers.dart';
-import '../../../editorial_score/providers/score_providers.dart';
+import '../../../editorial_score/domain/score_calculator.dart';
 import '../../../reference_photo/presentation/widgets/adjustments_sheet.dart';
 import '../../../reference_photo/presentation/widgets/reference_picker_sheet.dart';
 import '../../../reference_photo/providers/reference_providers.dart';
@@ -46,6 +46,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   _CameraInitState _state = _CameraInitState.loading;
   String? _errorMessage;
   bool _hasCaptured = false;
+  EditorialScore? _lastCapturedScore;
   bool _showFlash = false;
 
   DateTime _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
@@ -62,7 +63,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   Timer? _focusRingTimer;
 
   final GlobalKey<State<DebugPerfOverlay>> _debugPerfOverlayKey =
-  GlobalKey<State<DebugPerfOverlay>>();
+      GlobalKey<State<DebugPerfOverlay>>();
 
   // Captured once while the widget is still alive — ref.read()/ref.watch()
   // cannot be called inside dispose() (the element is already being torn
@@ -95,7 +96,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       await cameraService.startImageStream(_onFrame);
 
       _mlKitSubscription = ref.read(mlKitServiceProvider).analysisStream.listen(
-            (result) {
+        (result) {
           _latestMask = result.segmentationMask;
         },
       );
@@ -182,6 +183,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     if (!mounted) return;
     setState(() {
       _hasCaptured = true;
+      _lastCapturedScore = shot.score;
       _showFlash = true;
     });
 
@@ -276,9 +278,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   Future<void> _onTapUp(
-      TapUpDetails details,
-      BoxConstraints constraints,
-      ) async {
+    TapUpDetails details,
+    BoxConstraints constraints,
+  ) async {
     final cameraService = ref.read(cameraServiceProvider);
     final controller = cameraService.controller;
     if (controller == null) return;
@@ -349,6 +351,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       if (!mounted) return;
       setState(() {
         _hasCaptured = true;
+        _lastCapturedScore = shot.score;
         _showFlash = true;
       });
       Future.delayed(const Duration(milliseconds: 150), () {
@@ -468,8 +471,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                 color: colors.warning.withOpacity(0.9),
                 child: Text(
                   'Pose/face detection is unavailable on this device. '
-                      'Voice coaching and auto-capture are off — you can still '
-                      'capture manually.',
+                  'Voice coaching and auto-capture are off — you can still '
+                  'capture manually.',
                   textAlign: TextAlign.center,
                   style: AppTypography.caption(
                     colors,
@@ -534,7 +537,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               // was a real mismatch.
               final displayedPhrase =
                   ref.watch(displayedCoachingPhraseProvider) ??
-                      nextAction.phrase;
+                  nextAction.phrase;
               return Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -558,17 +561,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             },
           ),
         ),
-        if (_hasCaptured)
+        if (_hasCaptured && _lastCapturedScore != null)
           Positioned(
             top: secondRowTop,
             right: AppSpacing.md,
-            child: Consumer(
-              builder: (context, ref, _) {
-                final score = ref.watch(currentScoreProvider);
-                if (score == null) return const SizedBox.shrink();
-                return ScoreBadge(score: score.overall);
-              },
-            ),
+            child: ScoreBadge(score: _lastCapturedScore!.overall),
           ),
         if (_showFlash) Container(color: colors.accent.withOpacity(0.5)),
         Positioned(

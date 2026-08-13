@@ -55,7 +55,15 @@ EditorialScore calculateReferenceScore(
       sceneClutterNormalized,
       refClutterNormalized,
     );
-    background = ((1.0 - deviation).clamp(0.0, 1.0) * 100).round();
+    final thresholdForComposition = ComparisonMath.thresholdForComposition(
+      tolerance.compositionTolerance,
+    );
+    final similarity = ComparisonMath.similarity(
+      deviation,
+      thresholdForComposition,
+      ComparisonMath.maxDeviationForComposition,
+    );
+    background = (similarity * 100).round().clamp(0, 100);
   } else {
     final backgroundRaw =
         1.0 - (scene.backgroundClutterCount / 10).clamp(0.0, 1.0);
@@ -105,11 +113,8 @@ int _compositionScore(
 ) {
   final refNegativeSpace = reference.negativeSpaceScore;
   final refSymmetry = reference.symmetryScore;
-  final refBackgroundClutter = reference.backgroundClutterCount;
 
-  if (refNegativeSpace == null &&
-      refSymmetry == null &&
-      refBackgroundClutter == null) {
+  if (refNegativeSpace == null && refSymmetry == null) {
     return ((scene.negativeSpaceScore * 0.5 + scene.symmetryScore * 0.5) * 100)
         .round()
         .clamp(0, 100);
@@ -137,24 +142,6 @@ int _compositionScore(
 
   if (refSymmetry != null) {
     final deviation = (refSymmetry - scene.symmetryScore).clamp(0.0, 1.0);
-    sum += ComparisonMath.similarity(
-      deviation,
-      thresholdForComposition,
-      ComparisonMath.maxDeviationForComposition,
-    );
-    count++;
-  }
-
-  if (refBackgroundClutter != null) {
-    final sceneClutterNormalized = (scene.backgroundClutterCount / 10).clamp(
-      0.0,
-      1.0,
-    );
-    final refClutterNormalized = (refBackgroundClutter / 10).clamp(0.0, 1.0);
-    final deviation = ComparisonMath.deviation(
-      sceneClutterNormalized,
-      refClutterNormalized,
-    );
     sum += ComparisonMath.similarity(
       deviation,
       thresholdForComposition,
@@ -233,13 +220,7 @@ int _expressionScore(
 ) {
   final refExpression = reference.expression;
 
-  if (refExpression == null) {
-    int expression = 60;
-    if (subject.expression == 'smiling') expression = 90;
-    if (subject.expression == 'serious') expression = 55;
-    if (subject.eyesOpen == false) expression = 20;
-    return expression;
-  }
+  if (refExpression == null) return 60;
 
   if (subject.expression == null) {
     // The reference has a target expression, but the subject side has no
