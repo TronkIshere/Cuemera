@@ -26,7 +26,7 @@ final sceneProfileProvider = StateProvider<SceneProfile>((ref) {
 });
 
 final onFrameCallbackProvider =
-    StateProvider<void Function(CameraImage image)?>((ref) => null);
+StateProvider<void Function(CameraImage image)?>((ref) => null);
 
 /// True once `MlKitService` has confirmed it's failing consistently
 /// (typically the on-device pose/face/segmentation models failed to
@@ -53,7 +53,6 @@ final trackingEngineProvider = Provider<TrackingEngine>((ref) {
 });
 
 final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
-  final current = ref.watch(subjectProfileProvider);
   final referenceAsync = ref.watch(referenceProfileProvider);
   final ReferenceProfile? reference = referenceAsync.valueOrNull;
 

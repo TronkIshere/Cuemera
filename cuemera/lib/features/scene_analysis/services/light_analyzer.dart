@@ -35,28 +35,26 @@ class LightAnalyzer {
   int? lastAnalyzeLightMicros;
 
   SceneProfile analyzeLight(
-    dynamic cameraFrame,
-    SceneProfile previous, {
-    SegmentationMask? segmentationMask,
-    SubjectProfile? subject,
-  }) {
+      dynamic cameraFrame,
+      SceneProfile previous, {
+        SegmentationMask? segmentationMask,
+        SubjectProfile? subject,
+      }) {
     final image = cameraFrame as CameraImage?;
     if (image == null) return previous;
 
     final stopwatch = Stopwatch()..start();
 
     final brightness = _estimateBrightness(image);
-    final lightDirectionDegrees = _estimateLightDirection(image);
+    final maskStats = _analyzeMask(segmentationMask);
+    final lumaStats = _analyzeLumaPlane(image, segmentationMask);
 
-    final subjectRatio = _computeSubjectRatio(segmentationMask);
-    final backgroundVariance = _computeBackgroundVariance(
-      image,
-      segmentationMask,
-    );
+    final subjectRatio = maskStats?.subjectRatio;
+    final backgroundVariance = lumaStats.backgroundVariance;
 
     final backgroundClutterCount = _backgroundClutterScore(backgroundVariance);
     final negativeSpaceScore = _negativeSpaceScore(subjectRatio);
-    final symmetryScore = _estimateSymmetry(image, segmentationMask, subject);
+    final symmetryScore = _estimateSymmetry(maskStats, subject);
     final (hue, warmth) = _estimateColorTone(image);
     final depthEstimate = _depthScore(subjectRatio, backgroundVariance);
 
@@ -70,7 +68,7 @@ class LightAnalyzer {
 
     return previous.copyWith(
       brightness: brightness,
-      lightDirectionDegrees: lightDirectionDegrees,
+      lightDirectionDegrees: lumaStats.lightDirectionDegrees,
       negativeSpaceScore: negativeSpaceScore,
       symmetryScore: symmetryScore,
       backgroundClutterCount: backgroundClutterCount,
@@ -98,84 +96,10 @@ class LightAnalyzer {
     return (sum / count) / 255.0;
   }
 
-  double? _estimateLightDirection(CameraImage image) {
-    final plane = image.planes.first;
-    final bytes = plane.bytes;
-    final width = image.width;
-    final height = image.height;
-    final bytesPerRow = plane.bytesPerRow;
-
-    if (bytes.isEmpty || width <= 0 || height <= 0) return null;
-
-    double leftSum = 0, rightSum = 0, topSum = 0, bottomSum = 0;
-    int leftCount = 0, rightCount = 0, topCount = 0, bottomCount = 0;
-
-    const stepX = 8;
-    const stepY = 8;
-
-    for (var y = 0; y < height; y += stepY) {
-      final rowOffset = y * bytesPerRow;
-      if (rowOffset >= bytes.length) continue;
-
-      for (var x = 0; x < width; x += stepX) {
-        final index = rowOffset + x;
-        if (index >= bytes.length) continue;
-
-        final value = bytes[index];
-
-        if (x < width / 2) {
-          leftSum += value;
-          leftCount++;
-        } else {
-          rightSum += value;
-          rightCount++;
-        }
-
-        if (y < height / 2) {
-          topSum += value;
-          topCount++;
-        } else {
-          bottomSum += value;
-          bottomCount++;
-        }
-      }
-    }
-
-    if (leftCount == 0 || rightCount == 0 || topCount == 0 || bottomCount == 0)
-      return null;
-
-    final leftAvg = leftSum / leftCount;
-    final rightAvg = rightSum / rightCount;
-    final topAvg = topSum / topCount;
-    final bottomAvg = bottomSum / bottomCount;
-
-    final horizontalDelta = rightAvg - leftAvg;
-    final verticalDelta = topAvg - bottomAvg;
-
-    if (horizontalDelta.abs() < 2 && verticalDelta.abs() < 2) return null;
-
-    final angle = _atan2Degrees(verticalDelta, horizontalDelta);
-    return angle;
-  }
-
   double _atan2Degrees(double y, double x) {
     var degrees = math.atan2(y, x) * 180 / math.pi;
     if (degrees < 0) degrees += 360;
     return degrees;
-  }
-
-  double? _computeSubjectRatio(SegmentationMask? mask) {
-    if (mask == null) return null;
-
-    final confidences = mask.confidences;
-    if (confidences.isEmpty) return null;
-
-    int subjectPixels = 0;
-    for (final confidence in confidences) {
-      if (confidence > 0.5) subjectPixels++;
-    }
-
-    return subjectPixels / confidences.length;
   }
 
   double _negativeSpaceScore(double? subjectRatio) {
@@ -183,106 +107,157 @@ class LightAnalyzer {
     return (1.0 - subjectRatio).clamp(0.0, 1.0);
   }
 
-  double _estimateSymmetry(
-    CameraImage image,
-    SegmentationMask? mask,
-    SubjectProfile? subject,
-  ) {
-    if (subject?.shoulderAngleDegrees != null) {
-      final angle = subject!.shoulderAngleDegrees!.abs();
-      return (1.0 - (angle / 45.0)).clamp(0.0, 1.0);
+  double _estimateSymmetry(_MaskStats? maskStats, SubjectProfile? subject) {
+    final shoulderAngle = subject?.shoulderAngleDegrees;
+    if (shoulderAngle != null) {
+      return (1.0 - (shoulderAngle.abs() / 45.0)).clamp(0.0, 1.0);
     }
 
-    if (mask == null) return 0.5;
+    if (maskStats == null) return 0.5;
+
+    final left = maskStats.leftSubjectPixels;
+    final right = maskStats.rightSubjectPixels;
+    final total = left + right;
+    if (total == 0) return 0.5;
+
+    return (1.0 - ((left - right).abs() / total)).clamp(0.0, 1.0);
+  }
+
+  _MaskStats? _analyzeMask(SegmentationMask? mask) {
+    if (mask == null) return null;
 
     final confidences = mask.confidences;
     final width = mask.width;
     final height = mask.height;
-    if (confidences.isEmpty || width <= 0 || height <= 0) return 0.5;
+    if (confidences.isEmpty || width <= 0 || height <= 0) return null;
 
-    int leftSubject = 0;
-    int rightSubject = 0;
+    const step = 4;
+    final halfWidth = width / 2;
 
-    for (var y = 0; y < height; y += 4) {
-      for (var x = 0; x < width; x += 4) {
-        final index = y * width + x;
+    int subjectPixels = 0;
+    int sampledPixels = 0;
+    int leftSubjectPixels = 0;
+    int rightSubjectPixels = 0;
+
+    for (var y = 0; y < height; y += step) {
+      final rowOffset = y * width;
+      for (var x = 0; x < width; x += step) {
+        final index = rowOffset + x;
         if (index >= confidences.length) continue;
 
-        if (confidences[index] > 0.5) {
-          if (x < width / 2) {
-            leftSubject++;
-          } else {
-            rightSubject++;
-          }
+        sampledPixels++;
+        if (confidences[index] <= 0.5) continue;
+
+        subjectPixels++;
+        if (x < halfWidth) {
+          leftSubjectPixels++;
+        } else {
+          rightSubjectPixels++;
         }
       }
     }
 
-    final total = leftSubject + rightSubject;
-    if (total == 0) return 0.5;
+    if (sampledPixels == 0) return null;
 
-    final balance = 1.0 - ((leftSubject - rightSubject).abs() / total);
-    return balance.clamp(0.0, 1.0);
+    return _MaskStats(
+      subjectRatio: subjectPixels / sampledPixels,
+      leftSubjectPixels: leftSubjectPixels,
+      rightSubjectPixels: rightSubjectPixels,
+    );
   }
 
-  double? _computeBackgroundVariance(
-    CameraImage image,
-    SegmentationMask? mask,
-  ) {
+  _LumaStats _analyzeLumaPlane(CameraImage image, SegmentationMask? mask) {
     final plane = image.planes.first;
     final bytes = plane.bytes;
     final width = image.width;
     final height = image.height;
     final bytesPerRow = plane.bytesPerRow;
 
-    if (bytes.isEmpty || width <= 0 || height <= 0) return null;
+    const empty = _LumaStats(
+      lightDirectionDegrees: null,
+      backgroundVariance: null,
+    );
+    if (bytes.isEmpty || width <= 0 || height <= 0) return empty;
 
-    List<double>? confidences;
-    int maskWidth = width;
-    if (mask != null) {
-      confidences = mask.confidences;
-      maskWidth = mask.width;
-    }
+    final maskConfidences = mask?.confidences ?? const <double>[];
+    final maskWidth = mask?.width ?? 0;
+    final maskHeight = mask?.height ?? 0;
+    final useMask =
+        maskConfidences.isNotEmpty && maskWidth > 0 && maskHeight > 0;
+    final maskScaleX = useMask ? maskWidth / width : 0.0;
+    final maskScaleY = useMask ? maskHeight / height : 0.0;
 
-    const stepX = 6;
-    const stepY = 6;
+    const step = 6;
+    final halfWidth = width / 2;
+    final halfHeight = height / 2;
 
+    double leftSum = 0, rightSum = 0, topSum = 0, bottomSum = 0;
+    int leftCount = 0, rightCount = 0, topCount = 0, bottomCount = 0;
     double varianceSum = 0;
-    int sampleCount = 0;
+    int varianceSamples = 0;
+    int? previousBackgroundValue;
 
-    int? previousValue;
-
-    for (var y = 0; y < height; y += stepY) {
+    for (var y = 0; y < height; y += step) {
       final rowOffset = y * bytesPerRow;
       if (rowOffset >= bytes.length) continue;
 
-      for (var x = 0; x < width; x += stepX) {
+      final isTopHalf = y < halfHeight;
+      final maskRowOffset = useMask ? (y * maskScaleY).floor() * maskWidth : 0;
+
+      for (var x = 0; x < width; x += step) {
         final index = rowOffset + x;
         if (index >= bytes.length) continue;
 
-        bool isBackground = true;
-        if (confidences != null) {
-          final maskIndex = y * maskWidth + x;
-          if (maskIndex < confidences.length && confidences[maskIndex] > 0.5) {
-            isBackground = false;
+        final value = bytes[index];
+
+        if (x < halfWidth) {
+          leftSum += value;
+          leftCount++;
+        } else {
+          rightSum += value;
+          rightCount++;
+        }
+        if (isTopHalf) {
+          topSum += value;
+          topCount++;
+        } else {
+          bottomSum += value;
+          bottomCount++;
+        }
+
+        if (useMask) {
+          final maskIndex = maskRowOffset + (x * maskScaleX).floor();
+          if (maskIndex >= 0 &&
+              maskIndex < maskConfidences.length &&
+              maskConfidences[maskIndex] > 0.5) {
+            continue;
           }
         }
 
-        if (!isBackground) continue;
-
-        final value = bytes[index];
-        if (previousValue != null) {
-          final diff = (value - previousValue).abs();
-          varianceSum += diff;
-          sampleCount++;
+        if (previousBackgroundValue != null) {
+          varianceSum += (value - previousBackgroundValue).abs();
+          varianceSamples++;
         }
-        previousValue = value;
+        previousBackgroundValue = value;
       }
-      previousValue = null;
+      previousBackgroundValue = null;
     }
 
-    if (sampleCount == 0) return null;
-    return varianceSum / sampleCount;
+    double? lightDirectionDegrees;
+    if (leftCount > 0 && rightCount > 0 && topCount > 0 && bottomCount > 0) {
+      final horizontalDelta = rightSum / rightCount - leftSum / leftCount;
+      final verticalDelta = topSum / topCount - bottomSum / bottomCount;
+      if (horizontalDelta.abs() >= 2 || verticalDelta.abs() >= 2) {
+        lightDirectionDegrees = _atan2Degrees(verticalDelta, horizontalDelta);
+      }
+    }
+
+    return _LumaStats(
+      lightDirectionDegrees: lightDirectionDegrees,
+      backgroundVariance: varianceSamples == 0
+          ? null
+          : varianceSum / varianceSamples,
+    );
   }
 
   int _backgroundClutterScore(double? variance) {
@@ -340,13 +315,35 @@ class LightAnalyzer {
     if (debugLogColorToneSamples) {
       debugPrint(
         '[LightAnalyzer] colorTone sample — '
-        'avgU: ${avgU.toStringAsFixed(1)}, '
-        'avgV: ${avgV.toStringAsFixed(1)}, '
-        'hue: ${hue.toStringAsFixed(1)}, '
-        'warmth: ${warmth.toStringAsFixed(2)}',
+            'avgU: ${avgU.toStringAsFixed(1)}, '
+            'avgV: ${avgV.toStringAsFixed(1)}, '
+            'hue: ${hue.toStringAsFixed(1)}, '
+            'warmth: ${warmth.toStringAsFixed(2)}',
       );
     }
 
     return (hue, warmth);
   }
+}
+
+class _LumaStats {
+  const _LumaStats({
+    required this.lightDirectionDegrees,
+    required this.backgroundVariance,
+  });
+
+  final double? lightDirectionDegrees;
+  final double? backgroundVariance;
+}
+
+class _MaskStats {
+  const _MaskStats({
+    required this.subjectRatio,
+    required this.leftSubjectPixels,
+    required this.rightSubjectPixels,
+  });
+
+  final double subjectRatio;
+  final int leftSubjectPixels;
+  final int rightSubjectPixels;
 }

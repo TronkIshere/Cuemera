@@ -62,7 +62,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   Timer? _focusRingTimer;
 
   final GlobalKey<State<DebugPerfOverlay>> _debugPerfOverlayKey =
-      GlobalKey<State<DebugPerfOverlay>>();
+  GlobalKey<State<DebugPerfOverlay>>();
 
   // Captured once while the widget is still alive — ref.read()/ref.watch()
   // cannot be called inside dispose() (the element is already being torn
@@ -95,7 +95,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       await cameraService.startImageStream(_onFrame);
 
       _mlKitSubscription = ref.read(mlKitServiceProvider).analysisStream.listen(
-        (result) {
+            (result) {
           _latestMask = result.segmentationMask;
         },
       );
@@ -276,9 +276,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   Future<void> _onTapUp(
-    TapUpDetails details,
-    BoxConstraints constraints,
-  ) async {
+      TapUpDetails details,
+      BoxConstraints constraints,
+      ) async {
     final cameraService = ref.read(cameraServiceProvider);
     final controller = cameraService.controller;
     if (controller == null) return;
@@ -428,7 +428,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       );
     }
 
-    final score = ref.watch(currentScoreProvider);
     final selectedReferencePath = ref.watch(selectedReferenceImagePathProvider);
     final mlKitUnavailable = ref.watch(mlKitUnavailableProvider);
 
@@ -469,8 +468,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                 color: colors.warning.withOpacity(0.9),
                 child: Text(
                   'Pose/face detection is unavailable on this device. '
-                  'Voice coaching and auto-capture are off — you can still '
-                  'capture manually.',
+                      'Voice coaching and auto-capture are off — you can still '
+                      'capture manually.',
                   textAlign: TextAlign.center,
                   style: AppTypography.caption(
                     colors,
@@ -535,7 +534,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               // was a real mismatch.
               final displayedPhrase =
                   ref.watch(displayedCoachingPhraseProvider) ??
-                  nextAction.phrase;
+                      nextAction.phrase;
               return Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -559,11 +558,17 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             },
           ),
         ),
-        if (_hasCaptured && score != null)
+        if (_hasCaptured)
           Positioned(
             top: secondRowTop,
             right: AppSpacing.md,
-            child: ScoreBadge(score: score.overall),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final score = ref.watch(currentScoreProvider);
+                if (score == null) return const SizedBox.shrink();
+                return ScoreBadge(score: score.overall);
+              },
+            ),
           ),
         if (_showFlash) Container(color: colors.accent.withOpacity(0.5)),
         Positioned(
