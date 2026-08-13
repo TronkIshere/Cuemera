@@ -1,6 +1,7 @@
 // features/voice_director/domain/reference_comparison_engine.dart
 import 'package:cuemera/features/voice_director/domain/priority_engine.dart';
 import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../reference_photo/domain/comparison_math.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
@@ -42,6 +43,15 @@ class ReferenceComparisonEngine {
       (a, b) => b.decision.normalizedSeverity.compareTo(
         a.decision.normalizedSeverity,
       ),
+    );
+    debugPrint(
+      'pick_worst: ' +
+          exceeding
+              .map(
+                (e) =>
+                    '${e.decision.attribute.name}=${e.decision.normalizedSeverity.toStringAsFixed(3)}',
+              )
+              .join(', '),
     );
     final worst = exceeding.first;
 
@@ -145,7 +155,13 @@ class ReferenceComparisonEngine {
     final referenceValue = reference.shoulderAngleDegrees;
     if (subjectValue == null || referenceValue == null) return null;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
+    final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+    final isSubjectGreater = signedDiff > 0;
     final normalizedSeverity = ComparisonMath.normalizedSeverity(
       deviation,
       ComparisonMath.maxDeviationForPose,
@@ -158,7 +174,7 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final phrase = subjectValue > referenceValue
+    final phrase = isSubjectGreater
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Square your shoulders just a touch',
@@ -178,7 +194,7 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.shoulderAngle,
-        direction: subjectValue > referenceValue
+        direction: isSubjectGreater
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.poseAndFace,

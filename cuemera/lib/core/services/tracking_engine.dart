@@ -230,9 +230,10 @@ class TrackingEngine {
       if (current.shoulderAngleDegrees == null) {
         scores.add(0.0);
       } else {
-        final deviation = ComparisonMath.deviation(
+        final deviation = ComparisonMath.circularDeviation(
           current.shoulderAngleDegrees!,
           target.shoulderAngleDegrees!,
+          360.0,
         );
         final threshold = ComparisonMath.thresholdForPose(
           tolerance.poseTolerance,

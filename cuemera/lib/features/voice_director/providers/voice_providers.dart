@@ -37,7 +37,7 @@ final nextActionProvider = Provider<PriorityAction?>((ref) {
 
 final displayedCoachingPhraseProvider = StateProvider<String?>((ref) => null);
 
-const _generationTimeout = Duration(seconds: 3);
+const _generationTimeout = Duration(seconds: 5);
 const _maxConsecutiveFailuresBeforeUnavailable = 3;
 
 final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
@@ -71,10 +71,16 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
       aiCoachingSettingsProvider.select((s) => s.enabled),
     );
 
+    debugPrint(
+      'ai_gate: aiUnavailable=$aiUnavailable, enabled=$aiCoachingEnabled, '
+      'modelNull=${phraseModel == null}, isReady=${phraseModel?.isReady}',
+    );
+
     if (aiUnavailable ||
         !aiCoachingEnabled ||
         phraseModel == null ||
         !phraseModel.isReady) {
+      debugPrint('ai_gate: fallback to rule-based phrase');
       ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
       ttsService.speak(action.phrase, emphasis: emphasis);
       return;
@@ -102,6 +108,7 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
     if (epoch != generationEpoch) return;
 
     if (generated != null) {
+      debugPrint('ai_gate: generated="$generated"');
       consecutiveFailures = 0;
       ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
       ttsService.speak(generated, emphasis: emphasis);
@@ -109,7 +116,11 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
     }
 
     consecutiveFailures++;
+    debugPrint(
+      'ai_gate: generate() failed, consecutiveFailures=$consecutiveFailures',
+    );
     if (consecutiveFailures >= _maxConsecutiveFailuresBeforeUnavailable) {
+      debugPrint('ai_gate: marking AI unavailable');
       ref.read(coachingAiUnavailableProvider.notifier).state = true;
     }
     ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
