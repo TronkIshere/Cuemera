@@ -6,6 +6,8 @@ This replaces the informal `PROJECT_STATUS.md` / `AI_SESSION_CONTEXT.md` handoff
 
 **A seventh session added a second TTS engine, `sherpa_onnx` (VITS/Piper), as the primary voice — with the existing `flutter_tts` kept as an automatic fallback.** See §8 below. **Status: in progress, not yet device-verified** — the asset wiring is still being finalized (the `espeak-ng-data` subdirectory listing for `pubspec.yaml` hadn't been supplied as of this writing), so nothing in §8 should be read as confirmed working end-to-end yet.
 
+**An eleventh session unified pose-landmark trust filtering across the reference-photo and live-camera paths**, implementing all three phases of the standalone `REFERENCE_TRUST_FILTER_SOLUTION.md` handoff doc, applying the tenth session's Bug 5 likelihood gate to the live side (`pose_analyzer.dart`) for the first time, and finding/fixing a real bug in the new Phase 2 code via an actual test screenshot. See §12 below.
+
 Companion docs: [`FILE_REFERENCE.md`](./FILE_REFERENCE.md) · [`LIMITATIONS_AND_ROADMAP.md`](./LIMITATIONS_AND_ROADMAP.md)
 
 ## 1. Project Overview
@@ -225,7 +227,29 @@ Verify with `LightAnalyzer.debugLogFrameTiming = true` before/after on a real de
 
 Worth wrapping both in `if (kDebugMode)` before a release build, consistent with how `reference_picker_sheet.dart`'s own painter debug logging is already gated.
 
-**Files still needed for the next session** (supersedes the previous list):
+**Files still needed for the next session** (session 10's list — see §12 below for what's still needed after the eleventh session):
 - `camera_screen.dart`, `auto_capture_service.dart`, `camera_service.dart` — never provided in any session; blocks confirming the live-camera debug HUD's data source and fully diagnosing "auto-capture sometimes goes fully silent."
 - `pose_analyzer.dart` (current copy) — to apply Bug 5's likelihood-gate fix to the live side.
+
+## 12. Eleventh session — unified pose-landmark trust filtering (reference + live), Phase 2 crop-redetect
+
+**Goal:** close out the screenshot-extrapolation problem flagged in §11's "new findings" (legs/arms extrapolated into a reference screenshot's UI chrome), following the three-phase design in the standalone `REFERENCE_TRUST_FILTER_SOLUTION.md` handoff doc, and apply §11 Bug 5's likelihood gate to the live-camera side (`pose_analyzer.dart`), which had never gotten it.
+
+**Change 1 — one shared trust gate for every pose value, both sides (`core/pose/landmark_gate.dart`, new).** Previously two separate, incomplete filters existed: a `_minLandmarkLikelihood` check inline in `reference_image_analyzer.dart`'s numeric fields, and a geometric evidence heuristic (`_findSuspectLandmarks`) that lived only in `ReferenceAnalysisPainter` and never touched the numbers it was derived alongside. `PoseLandmarkGate` now owns both, plus an optional mask-based signal, in one place that `reference_image_analyzer.dart`, `reference_picker_sheet.dart`, and `pose_analyzer.dart` (live) all read. A landmark the gate distrusts can no longer reach `shoulderAngleDegrees`/`torsoScale`/`shoulderBalanceRatio`/`shoulderSpanRatio`/`bodyYawEstimate`/`bodyRatio`, and `poseLandmarkPoints` (what the painter draws) is now exactly the same trusted set — closing the drawn-vs-compared inconsistency `README.md` §11's Bug 5 note first flagged.
+
+**Change 2 — segmentation mask as a trust signal (`features/reference_photo/services/landmark_trust_classifier.dart`, rewritten).** Samples `SelfieSegmentation`'s mask confidence at each landmark (Phase 1 of the solution doc), gated on an aspect-ratio check between mask and image space first — the segmenter runs with `enableRawSizeMask: true`, so a coordinate-space mismatch is possible on an EXIF-rotated photo (the same class of bug §6 fixed for `imageWidth`/`imageHeight` vs. landmark coordinates). A mismatch degrades to "signal unavailable" rather than silently mis-sampling.
+
+**Change 3 — crop, then re-detect (`features/reference_photo/services/reference_photo_crop_redetect.dart`, new).** Phase 2 of the solution doc. When enough extremities are still untrusted after Changes 1–2, crops the photo to the mask's subject bounding box and re-runs pose detection on just the crop, so surrounding UI chrome is never in what the detector sees. Recovered landmarks are merged back only where the original pass distrusted them and the crop pass trusts them; the merged set is re-run through the full gate rather than trusted unconditionally.
+
+**Bug found and fixed this session, via an actual test screenshot (an Instagram-style post with visible caption/comment UI) — not just by inspection.** `reconcileWithCrop` built its post-crop trust gates (`cropGate`, `mergedGate`) via `PoseLandmarkGate.fromRawLandmarks(...)` with no `maskSignal` argument, silently defaulting to `MaskTrustSignal.none` (`bypassed: true`). Phase 2 was therefore deciding whether to *recover* a landmark using only likelihood + geometry — the same two signals Phase 1 exists specifically because they're insufficient (a hallucinated point is usually anatomically plausible relative to the shoulders/hips already seen; it's only wrong about sitting outside the actual photo). On the test screenshot, this let Phase 2 recover the exact hip→knee→ankle chain Phase 1's real mask check had just correctly rejected, reproducing the original screenshot-extrapolation bug end-to-end despite all three phases being freshly "implemented." Fixed: both gates now sample a real mask signal before deciding trust, mirroring the likelihood-gate-then-mask-gate pattern `_derivePose` already used for Phase 0/1.
+
+**New findings, flagged but not fixed this session:**
+- Phase 2's trigger threshold (`shouldAttemptCropRedetect`, currently ⅓ of tracked extremities untrusted) is a first-pass estimate, not tuned against the 5 originally-failing screenshots referenced in §11.
+- Nothing in this session's work has run on a physical device — the test screenshot that caught the mask-signal bug was analyzed via debug-log/screenshot output, not a full live-app session.
+- `camera_screen.dart` confirmed to have no live-camera pose/face attribute readout at all — only `DebugPerfOverlay` (frame-timing only). The `shoulderAngle: OK/FAIL`-style HUD text referenced when §11 first flagged this most likely lives in `debug_perf_overlay.dart`, still not provided in any session.
+- Added `kDebugMode`-gated diagnostic logging in `reference_image_analyzer.dart` (a cheap file-size+checksum fingerprint, plus a detection-outcome summary, per `analyze()` call) to help confirm or rule out §11's non-determinism report — still not reproduced.
+
+**Files still needed for the next session:**
+- `debug_perf_overlay.dart` — to resolve the live-camera HUD data-source question above.
+- A physical device, and the 5 original failing reference screenshots from §11 — to tune Phase 2's trigger threshold and confirm the mask-signal fix generalizes beyond the one test case that caught it.
 - `ai_coaching_providers.dart`, `coaching_phrase_model_service.dart`, `coaching_phrase_model_providers.dart` — would let `coachingAiUnavailableProvider`'s permanent-lock behavior (Bug 4) be fixed at the root (e.g. an automatic reset/retry policy) instead of only mitigated via a longer timeout.

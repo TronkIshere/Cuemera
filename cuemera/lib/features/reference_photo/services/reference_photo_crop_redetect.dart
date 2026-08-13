@@ -14,6 +14,7 @@
 // production.
 
 import 'dart:io';
+import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
@@ -24,12 +25,6 @@ import '../../../core/pose/landmark_gate.dart';
 import '../../../core/services/error_reporting_service.dart';
 import 'landmark_trust_classifier.dart';
 
-/// Landmarks whose own untrusted status is worth paying for a second
-/// detection pass. Deliberately excludes the face-adjacent points (nose,
-/// eyes) -- the documented failure (LIMITATIONS_AND_ROADMAP.md, "Reference
-/// photos that are full-screen social-media screenshots...") is specifically
-/// legs/arms extrapolated past the subject's real extent when a screenshot
-/// crops the lower body, not the face.
 const List<PoseLandmarkType> _extremityTypes = [
   PoseLandmarkType.leftElbow,
   PoseLandmarkType.rightElbow,
@@ -46,10 +41,6 @@ bool shouldAttemptCropRedetect(PoseLandmarkGate gate) {
   for (final type in _extremityTypes) {
     if (!gate.isTrustedType(type)) untrusted++;
   }
-  // Arbitrary starting bar: a third of the tracked extremities untrusted.
-  // Needs tuning once real failing screenshots are available to check
-  // against -- too low a bar pays the second-detection-pass cost on
-  // ordinary photos, too high a bar misses the documented failure.
   return untrusted >= (_extremityTypes.length / 3).ceil();
 }
 
@@ -65,12 +56,6 @@ class CropRedetectOutcome {
   });
 }
 
-/// Crops [decoded] to the mask's subject bounding box, re-runs pose
-/// detection on just that crop, and merges any landmark the crop resolves
-/// with more confidence back into [originalGate]'s coordinate space. The
-/// crop only translates, it doesn't resize, so mapping a crop-local point
-/// back to the original photo is a plain offset add by the box's
-/// left/top -- no scale factor needed.
 Future<CropRedetectOutcome> reconcileWithCrop({
   required PoseLandmarkGate originalGate,
   required img.Image decoded,
@@ -147,6 +132,25 @@ Future<CropRedetectOutcome> reconcileWithCrop({
     );
   }
 
+  if (kDebugMode) {
+    final lines = <String>[];
+    for (var i = 0; i < kGatedLandmarkOrder.length; i++) {
+      final landmark = cropLandmarks[kGatedLandmarkOrder[i]];
+      lines.add(
+        landmark == null
+            ? '${kGatedLandmarkNames[i]}=absent'
+            : '${kGatedLandmarkNames[i]}='
+                  'x=${landmark.x.toStringAsFixed(1)},'
+                  'y=${landmark.y.toStringAsFixed(1)},'
+                  'likelihood=${landmark.likelihood.toStringAsFixed(3)}',
+      );
+    }
+    debugPrint(
+      'ReferenceImageAnalyzer raw crop-redetect pose (crop-local coords, '
+      'crop=${box.width}x${box.height}): ${lines.join(' ')}',
+    );
+  }
+
   final shifted = <PoseLandmarkType, RawLandmark>{
     for (final entry in cropLandmarks.entries)
       entry.key: RawLandmark(
@@ -156,13 +160,41 @@ Future<CropRedetectOutcome> reconcileWithCrop({
         likelihood: entry.value.likelihood,
       ),
   };
-  final cropGate = PoseLandmarkGate.fromRawLandmarks(shifted);
 
-  // Merge policy: only take the crop's version of a landmark the original
-  // pass distrusted, and only if the crop pass itself trusts it. A
-  // landmark the original already trusted is left alone even if the crop
-  // also detected it -- the crop is a fallback for the extrapolation case,
-  // not a wholesale replacement of a working detection pass.
+  if (kDebugMode) {
+    final shiftedPoints = <Offset?>[
+      for (final type in kGatedLandmarkOrder)
+        shifted[type] != null
+            ? Offset(shifted[type]!.x, shifted[type]!.y)
+            : null,
+    ];
+    final rawConfidence = debugSampleRawMaskConfidence(
+      points: shiftedPoints,
+      mask: mask,
+      imageWidth: decoded.width.toDouble(),
+      imageHeight: decoded.height.toDouble(),
+    );
+    final lines = [
+      for (final entry in rawConfidence.entries)
+        '${kGatedLandmarkNames[entry.key]}=${entry.value.toStringAsFixed(3)}',
+    ];
+    debugPrint(
+      'ReferenceImageAnalyzer raw crop-redetect mask confidence '
+      '(shifted to original-photo coords): ${lines.join(' ')}',
+    );
+  }
+
+  final likelihoodCropGate = PoseLandmarkGate.fromRawLandmarks(shifted);
+  final cropMaskSignal = sampleMaskTrust(
+    points: likelihoodCropGate.confidentPoints,
+    mask: mask,
+    imageWidth: decoded.width.toDouble(),
+    imageHeight: decoded.height.toDouble(),
+  );
+  final cropGate = cropMaskSignal.bypassed
+      ? likelihoodCropGate
+      : PoseLandmarkGate.fromRawLandmarks(shifted, maskSignal: cropMaskSignal);
+
   final merged = <PoseLandmarkType, RawLandmark>{};
   final recovered = <PoseLandmarkType>[];
   for (final type in kGatedLandmarkOrder) {
@@ -188,22 +220,32 @@ Future<CropRedetectOutcome> reconcileWithCrop({
     );
   }
 
-  // Re-run the full gate (segment-length/symmetry/intrusion checks) over
-  // the merged set rather than trusting the crop's landmark unconditionally
-  // -- introducing a crop-recovered ankle can change whether e.g. the
-  // bilateral-length-mismatch check now fires against the other leg.
-  final mergedGate = PoseLandmarkGate.fromRawLandmarks(merged);
+  final likelihoodMergedGate = PoseLandmarkGate.fromRawLandmarks(merged);
+  final mergedMaskSignal = sampleMaskTrust(
+    points: likelihoodMergedGate.confidentPoints,
+    mask: mask,
+    imageWidth: decoded.width.toDouble(),
+    imageHeight: decoded.height.toDouble(),
+  );
+  final mergedGate = mergedMaskSignal.bypassed
+      ? likelihoodMergedGate
+      : PoseLandmarkGate.fromRawLandmarks(merged, maskSignal: mergedMaskSignal);
+
+  final confirmedRecovered = recovered
+      .where((t) => mergedGate.isTrustedType(t))
+      .toList();
 
   if (kDebugMode) {
     debugPrint(
       'ReferenceImageAnalyzer crop-redetect: box=(${box.left},${box.top},'
-      '${box.width}x${box.height}) recovered=${recovered.map((t) => t.name).toList()}',
+      '${box.width}x${box.height}) candidateRecovered=${recovered.map((t) => t.name).toList()} '
+      'confirmedRecovered=${confirmedRecovered.map((t) => t.name).toList()}',
     );
   }
 
   return CropRedetectOutcome(
     gate: mergedGate,
     attempted: true,
-    changedAnyLandmark: true,
+    changedAnyLandmark: confirmedRecovered.isNotEmpty,
   );
 }

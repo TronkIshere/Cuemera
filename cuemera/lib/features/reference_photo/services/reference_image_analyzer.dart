@@ -226,6 +226,36 @@ class ReferenceImageAnalyzer {
     } finally {
       await poseDetector.close();
     }
+
+    // Debug-only, raw library output -- logged here, before _derivePose
+    // touches it with any of our own gating code, specifically so this can
+    // be read on its own: if ML Kit itself reports e.g. a high-likelihood
+    // ankle sitting inside on-screen UI text, that's the pose model
+    // hallucinating, not a bug in this codebase. Compare against the
+    // gated `gate.describe()` line _derivePose logs afterward -- if the
+    // same landmark is high-likelihood here but absent/suspect there, the
+    // gate did its job; if it's still trusted there, look at our code next.
+    if (kDebugMode) {
+      if (landmarks == null || landmarks.isEmpty) {
+        debugPrint('ReferenceImageAnalyzer raw pose: no pose detected');
+      } else {
+        final lines = <String>[];
+        for (var i = 0; i < kGatedLandmarkOrder.length; i++) {
+          final landmark = landmarks[kGatedLandmarkOrder[i]];
+          lines.add(
+            landmark == null
+                ? '${kGatedLandmarkNames[i]}=absent'
+                : '${kGatedLandmarkNames[i]}='
+                      'x=${landmark.x.toStringAsFixed(1)},'
+                      'y=${landmark.y.toStringAsFixed(1)},'
+                      'z=${landmark.z.toStringAsFixed(1)},'
+                      'likelihood=${landmark.likelihood.toStringAsFixed(3)}',
+          );
+        }
+        debugPrint('ReferenceImageAnalyzer raw pose: ${lines.join(' ')}');
+      }
+    }
+
     return landmarks;
   }
 
@@ -240,6 +270,90 @@ class ReferenceImageAnalyzer {
 
     final imageWidth = decodedResult.imageWidth;
     final imageHeight = decodedResult.imageHeight;
+
+    // Debug-only, raw library output for the mask side: dimensions and
+    // aspect ratio as ML Kit actually returned them, plus a raw
+    // (ungated -- see debugSampleRawMaskConfidence's doc comment)
+    // confidence sample at every landmark ML Kit reported, regardless of
+    // likelihood. This is the number to check against maskMatchesImageSpace
+    // silently returning MaskTrustSignal.none: if the aspect ratios printed
+    // here clearly don't match, that's the enableRawSizeMask coordinate-
+    // space mismatch the solution doc warned about (a library-behavior
+    // fact, not a bug); if they do match but a landmark you can see sitting
+    // on background pixels still samples a high raw confidence, that's the
+    // SelfieSegmentation model itself being fooled by screenshot UI chrome
+    // (also a model limitation, not our code); only a raw confidence that
+    // looks wrong for what the sampled pixel actually shows points at a bug
+    // in our own coordinate math.
+    if (kDebugMode && mask != null) {
+      final imageAspect = (imageWidth != null && imageHeight != null)
+          ? imageWidth / imageHeight
+          : null;
+      final maskAspect = mask.height > 0 ? mask.width / mask.height : null;
+      debugPrint(
+        'ReferenceImageAnalyzer raw mask: maskSize=${mask.width}x${mask.height} '
+        'imageSize=${imageWidth?.toStringAsFixed(0)}x${imageHeight?.toStringAsFixed(0)} '
+        'maskAspect=${maskAspect?.toStringAsFixed(3)} '
+        'imageAspect=${imageAspect?.toStringAsFixed(3)}',
+      );
+      if (imageWidth != null && imageHeight != null) {
+        final rawPoints = <Offset?>[
+          for (final type in kGatedLandmarkOrder)
+            landmarks[type] != null
+                ? Offset(landmarks[type]!.x, landmarks[type]!.y)
+                : null,
+        ];
+        final rawConfidence = debugSampleRawMaskConfidence(
+          points: rawPoints,
+          mask: mask,
+          imageWidth: imageWidth,
+          imageHeight: imageHeight,
+        );
+        final lines = [
+          for (final entry in rawConfidence.entries)
+            '${kGatedLandmarkNames[entry.key]}=${entry.value.toStringAsFixed(3)}',
+        ];
+        debugPrint(
+          'ReferenceImageAnalyzer raw mask confidence: ${lines.join(' ')}',
+        );
+
+        // Debug-only: the subject bounding box sampleMaskTrust now checks
+        // landmarks against (landmark_trust_classifier.dart), plus which
+        // of the raw points fall outside it. Compare this against the
+        // knee/ankle x,y in the "raw pose" line above: if a landmark that
+        // sampled high local confidence turns out to be outside this box,
+        // the new box check should catch it next run; if it's inside the
+        // box too, the box check won't help and a different signal is
+        // needed.
+        final box = computeSubjectBoundingBox(
+          mask: mask,
+          imageWidth: imageWidth.round(),
+          imageHeight: imageHeight.round(),
+        );
+        if (box == null) {
+          debugPrint(
+            'ReferenceImageAnalyzer raw subject box: none (mask empty)',
+          );
+        } else {
+          final outside = <String>[];
+          for (var i = 0; i < rawPoints.length; i++) {
+            final point = rawPoints[i];
+            if (point == null) continue;
+            final within =
+                point.dx >= box.left &&
+                point.dx <= box.left + box.width &&
+                point.dy >= box.top &&
+                point.dy <= box.top + box.height;
+            if (!within) outside.add(kGatedLandmarkNames[i]);
+          }
+          debugPrint(
+            'ReferenceImageAnalyzer raw subject box: '
+            'left=${box.left} top=${box.top} width=${box.width} height=${box.height} '
+            'pointsOutside=$outside',
+          );
+        }
+      }
+    }
 
     final likelihoodGate = PoseLandmarkGate.fromLandmarks(landmarks: landmarks);
 
@@ -489,10 +603,23 @@ class ReferenceImageAnalyzer {
 
   Future<SegmentationMask?> _runSegmentation(InputImage inputImage) async {
     SegmentationMask? mask;
-    final segmenter = SelfieSegmenter(
-      mode: SegmenterMode.single,
-      enableRawSizeMask: true,
-    );
+    // Bug fix, confirmed via a real device log on the Vogue test photo:
+    // enableRawSizeMask: true was returning the segmentation model's raw
+    // internal output resolution (a fixed 256x256 square) with no relation
+    // to the actual photo's dimensions (1080x2372, aspect 0.455 vs. the
+    // mask's 1.000) -- not "the image's resolution, just computed via a
+    // faster path" as the option name suggests. maskMatchesImageSpace
+    // correctly detected this and disabled mask-based trust entirely
+    // (bypassed: true) rather than sampling garbage, but that only proved
+    // the bug existed -- it didn't fix it, since Phase 0/1's likelihood +
+    // geometry alone can't reject a hallucinated-but-anatomically-
+    // plausible skeleton (see REFERENCE_TRUST_FILTER_SOLUTION.md). Raw
+    // mode exists to skip ML Kit's own resize-to-image-dimensions step for
+    // per-frame latency; this analyzer runs once per reference photo, not
+    // per frame, so there's no latency reason to pay that coordinate-
+    // mapping complexity here. Removed -- ML Kit now returns a mask
+    // already scaled to the input image's own dimensions.
+    final segmenter = SelfieSegmenter(mode: SegmenterMode.single);
     try {
       mask = await segmenter.processImage(inputImage);
     } catch (e, st) {
