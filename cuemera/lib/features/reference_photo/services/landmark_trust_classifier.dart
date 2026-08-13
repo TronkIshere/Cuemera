@@ -40,25 +40,6 @@ MaskTrustSignal sampleMaskTrust({
     return MaskTrustSignal.none;
   }
 
-  // Added after a real test photo (a torso-only Instagram screenshot with
-  // no legs actually pictured) showed leftKnee/rightKnee sampling HIGH
-  // local mask confidence (0.7-1.0) despite being hallucinated -- the
-  // model's own foreground silhouette (clothing/torso) apparently extends
-  // down far enough that the hallucinated knee position still lands on
-  // real "this is the subject" pixels. A local sample can only ever
-  // answer "is this pixel part of the person", never "is this landmark
-  // the joint it claims to be" -- those are different questions, and no
-  // amount of tuning confidenceThreshold closes that gap. The subject's
-  // overall bounding box (already computed for Phase 2's crop step) is an
-  // independent, coarser signal: a landmark outside the box cannot be
-  // real regardless of what its own local sample says, since it's outside
-  // where ML Kit's own segmentation model puts the subject at all.
-  //
-  // Unverified against the specific case that motivated it -- this may or
-  // may not actually catch that knee, since a torso/clothing silhouette
-  // that extends down far enough to fool a local sample could just as
-  // easily extend down far enough to be inside the bounding box too. Log
-  // and check on the next test rather than assume this closes the gap.
   final box = computeSubjectBoundingBox(
     mask: mask,
     imageWidth: imageWidth.round(),
@@ -134,17 +115,6 @@ double _sampleMaskConfidence({
   return count == 0 ? 0.0 : total / count;
 }
 
-/// Debug-only. Samples mask confidence at every point in [points] that is
-/// non-null, with no likelihood filtering, no bypass logic, and no trust
-/// decision attached -- exists purely so a debug log can show what the
-/// segmentation model itself reported at a given pixel, independent of any
-/// of our own gating code (kMinLandmarkLikelihood, maskBypassFraction,
-/// findSuspectLandmarks, etc). Never call this from anything that decides
-/// trust; it exists to let a log line be compared against the photo by eye,
-/// to tell "the model itself was fooled by this pixel" (a library/model
-/// limitation -- SelfieSegmentation isn't trained on screenshot UI chrome)
-/// apart from "our own sampling/coordinate math is wrong" (a bug in this
-/// codebase, not in ML Kit).
 Map<int, double> debugSampleRawMaskConfidence({
   required List<Offset?> points,
   required SegmentationMask mask,

@@ -30,10 +30,6 @@ class AiCoachingSettings {
   final int? installProgress;
   final String? installError;
 
-  /// Mirrors `coachingAiUnavailableProvider` — true once generation has
-  /// failed repeatedly during this session and coaching has silently
-  /// fallen back to the phrase bank. Toggling `enabled` off then on again
-  /// resets it (see `setEnabled`) as a manual retry.
   final bool aiUnavailable;
 
   AiCoachingSettings copyWith({
@@ -81,10 +77,6 @@ class AiCoachingSettingsNotifier extends StateNotifier<AiCoachingSettings> {
     await memoryService.setHabit(_aiCoachingEnabledKey, value);
     state = state.copyWith(enabled: value, clearError: true);
     if (value) {
-      // Manual (re-)enable doubles as the retry signal: give AI coaching
-      // a fresh shot even if it tripped coachingAiUnavailableProvider
-      // earlier this session — otherwise the only way to recover was a
-      // full app restart.
       _ref.read(coachingAiUnavailableProvider.notifier).state = false;
       await _install();
     }

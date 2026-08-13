@@ -9,24 +9,11 @@ class DetectionThresholds {
     required this.captureCooldownMs,
   });
 
-  /// EMA smoothing factor used by TrackingEngine (0..1, higher = less smoothing).
   final double emaAlpha;
-
-  /// Consecutive-frame streak required before accepting a changed
-  /// discrete value (eyesOpen, expression, backgroundClutterCount).
   final int debounceFrames;
-
-  /// Minimum trackingProgress (0..1) required before auto-capture can fire.
   final double minTrackingProgressForCapture;
-
-  /// Fallback background-clutter ceiling when the reference photo has no
-  /// measured backgroundClutterCount to compare against.
   final int defaultBackgroundClutterThreshold;
-
-  /// Minimum scene brightness (0..1) required before auto-capture can fire.
   final double minBrightnessForCapture;
-
-  /// Minimum time between consecutive auto-captures.
   final int captureCooldownMs;
 
   static const DetectionThresholds defaultValues = DetectionThresholds(

@@ -9,29 +9,8 @@ import '../domain/models/scene_profile.dart';
 import '../domain/models/subject_profile.dart';
 
 class LightAnalyzer {
-  /// Set to `true` for a physical-device verification pass of the
-  /// `planes[1]=U, planes[2]=V` assumption in [_estimateColorTone]
-  /// (see LIMITATIONS_AND_ROADMAP.md). With this on, point the camera at
-  /// a known pure-red target, then a known pure-blue target, and compare
-  /// the logged `avgU`/`avgV` against the expected YUV values for each
-  /// (pure red: U low/~90, V high/~240; pure blue: U high/~240, V
-  /// low/~110, for standard BT.601 full-range). If the logged values are
-  /// swapped or don't move as expected, the plane-index assumption is
-  /// wrong for this device/format and `_estimateColorTone` needs fixing.
-  /// Leave `false` outside of that verification pass — this runs every
-  /// analyzed frame and would otherwise flood the log.
   static const bool debugLogColorToneSamples = false;
-
-  /// Set to `true` to log analyzeLight()'s per-frame wall-clock cost via
-  /// debugPrint, for sizing Finding B from the camera-pipeline
-  /// performance audit against a real device. Leave `false` normally —
-  /// this runs every analyzed frame and would otherwise flood the log.
   static const bool debugLogFrameTiming = false;
-
-  /// Wall-clock cost of the most recent analyzeLight() call, in
-  /// microseconds. Updated every call regardless of
-  /// [debugLogFrameTiming], so a debug UI can read it without needing
-  /// log spam turned on.
   int? lastAnalyzeLightMicros;
 
   SceneProfile analyzeLight(

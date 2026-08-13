@@ -19,11 +19,8 @@ class Shot {
   final String shotType;
   final String? imagePath;
 
-  /// Path of the reference photo that produced [score], so the shot can
-  /// be re-explained (or re-scored against a different reference) later.
   final String? referenceImagePath;
 
-  /// The `ToleranceSettings` in effect when [score] was calculated.
   final ToleranceSettings? toleranceSettings;
 
   Map<String, dynamic> toMap() {

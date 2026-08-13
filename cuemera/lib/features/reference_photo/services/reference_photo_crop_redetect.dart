@@ -75,9 +75,6 @@ Future<CropRedetectOutcome> reconcileWithCrop({
     imageHeight: decoded.height,
   );
   if (box == null || box.width <= 0 || box.height <= 0) {
-    // No usable foreground region to crop to -- e.g. estimateNegativeSpace
-    // would also read this mask as all-background. Nothing for Phase 2 to
-    // work with.
     return CropRedetectOutcome(
       gate: originalGate,
       attempted: false,

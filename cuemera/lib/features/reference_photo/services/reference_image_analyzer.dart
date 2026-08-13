@@ -102,16 +102,11 @@ class _PaletteAnalysisResult {
 }
 
 class ReferenceImageAnalyzer {
-  /// Hip-to-ankle guard, kept alongside `PoseLandmarkGate`'s
-  /// knee-to-ankle segment budgets: the two catch different framings.
   static const double _maxExtremityExtrapolationMultiplier = 4.0;
 
   Future<ReferenceProfile> analyze(String imagePath) async {
     final inputImage = InputImage.fromFilePath(imagePath);
 
-    // None of these five steps depends on another's result, so they run
-    // concurrently instead of sequentially. Only the mask-dependent scores
-    // below (which need both `mask` and `decoded`) wait on more than one.
     final results = await Future.wait<Object?>([
       _detectPose(inputImage),
       _analyzeFace(inputImage),
@@ -227,14 +222,6 @@ class ReferenceImageAnalyzer {
       await poseDetector.close();
     }
 
-    // Debug-only, raw library output -- logged here, before _derivePose
-    // touches it with any of our own gating code, specifically so this can
-    // be read on its own: if ML Kit itself reports e.g. a high-likelihood
-    // ankle sitting inside on-screen UI text, that's the pose model
-    // hallucinating, not a bug in this codebase. Compare against the
-    // gated `gate.describe()` line _derivePose logs afterward -- if the
-    // same landmark is high-likelihood here but absent/suspect there, the
-    // gate did its job; if it's still trusted there, look at our code next.
     if (kDebugMode) {
       if (landmarks == null || landmarks.isEmpty) {
         debugPrint('ReferenceImageAnalyzer raw pose: no pose detected');
@@ -271,20 +258,6 @@ class ReferenceImageAnalyzer {
     final imageWidth = decodedResult.imageWidth;
     final imageHeight = decodedResult.imageHeight;
 
-    // Debug-only, raw library output for the mask side: dimensions and
-    // aspect ratio as ML Kit actually returned them, plus a raw
-    // (ungated -- see debugSampleRawMaskConfidence's doc comment)
-    // confidence sample at every landmark ML Kit reported, regardless of
-    // likelihood. This is the number to check against maskMatchesImageSpace
-    // silently returning MaskTrustSignal.none: if the aspect ratios printed
-    // here clearly don't match, that's the enableRawSizeMask coordinate-
-    // space mismatch the solution doc warned about (a library-behavior
-    // fact, not a bug); if they do match but a landmark you can see sitting
-    // on background pixels still samples a high raw confidence, that's the
-    // SelfieSegmentation model itself being fooled by screenshot UI chrome
-    // (also a model limitation, not our code); only a raw confidence that
-    // looks wrong for what the sampled pixel actually shows points at a bug
-    // in our own coordinate math.
     if (kDebugMode && mask != null) {
       final imageAspect = (imageWidth != null && imageHeight != null)
           ? imageWidth / imageHeight
@@ -317,14 +290,6 @@ class ReferenceImageAnalyzer {
           'ReferenceImageAnalyzer raw mask confidence: ${lines.join(' ')}',
         );
 
-        // Debug-only: the subject bounding box sampleMaskTrust now checks
-        // landmarks against (landmark_trust_classifier.dart), plus which
-        // of the raw points fall outside it. Compare this against the
-        // knee/ankle x,y in the "raw pose" line above: if a landmark that
-        // sampled high local confidence turns out to be outside this box,
-        // the new box check should catch it next run; if it's inside the
-        // box too, the box check won't help and a different signal is
-        // needed.
         final box = computeSubjectBoundingBox(
           mask: mask,
           imageWidth: imageWidth.round(),
@@ -378,13 +343,6 @@ class ReferenceImageAnalyzer {
       debugPrint('ReferenceImageAnalyzer ${gate.describe()}');
     }
 
-    // Phase 2 (REFERENCE_TRUST_FILTER_SOLUTION.md): if enough extremities
-    // are still untrusted after Phase 0/1, and there's a mask and a decoded
-    // bitmap to crop, try recovering them from a second detection pass on
-    // just the subject's bounding box -- see
-    // reference_photo_crop_redetect.dart. A photo with no mask (e.g.
-    // segmentation itself failed) or no decoded bitmap (decode failed)
-    // simply skips this and keeps the Phase 0/1 result, same as before.
     if (mask != null && decodedResult.decoded != null) {
       final outcome = await reconcileWithCrop(
         originalGate: gate,
@@ -411,19 +369,10 @@ class ReferenceImageAnalyzer {
       final scale = sqrt(dx * dx + dy * dy);
       torsoScale = scale;
 
-      // Sign convention: positive means the left shoulder sits lower
-      // (larger y) than the right. Normalized by shoulder-width so it
-      // stays scale-invariant regardless of subject distance.
       shoulderBalanceRatio = scale > 0
           ? (leftShoulder.y - rightShoulder.y) / scale
           : null;
 
-      // z is ML Kit's experimental depth value (same unit as x/y, origin
-      // at the hip, "less accurate than x and y" per Google's docs). This
-      // mirrors the shoulderAngleDegrees formula above but swaps y for z,
-      // so a rotated torso (one shoulder closer to camera) reads as a
-      // nonzero angle. Left/right sign is unverified on a physical device
-      // — see ReferenceComparisonEngine._bodyYawDirectionIsMirrored.
       bodyYawEstimate = atan2(rightShoulder.z - leftShoulder.z, dx) * 180 / pi;
 
       final leftHip = gate.landmark(PoseLandmarkType.leftHip);
@@ -436,9 +385,6 @@ class ReferenceImageAnalyzer {
         final torsoHeight = sqrt(
           pow(hipMidX - shoulderMidX, 2) + pow(hipMidY - shoulderMidY, 2),
         );
-        // Shoulder width relative to torso height: bigger means broader/
-        // more spread shoulders, smaller means narrower/hunched,
-        // independent of the subject's distance from camera.
         shoulderSpanRatio = torsoHeight > 0 ? scale / torsoHeight : null;
       }
     }
@@ -603,22 +549,6 @@ class ReferenceImageAnalyzer {
 
   Future<SegmentationMask?> _runSegmentation(InputImage inputImage) async {
     SegmentationMask? mask;
-    // Bug fix, confirmed via a real device log on the Vogue test photo:
-    // enableRawSizeMask: true was returning the segmentation model's raw
-    // internal output resolution (a fixed 256x256 square) with no relation
-    // to the actual photo's dimensions (1080x2372, aspect 0.455 vs. the
-    // mask's 1.000) -- not "the image's resolution, just computed via a
-    // faster path" as the option name suggests. maskMatchesImageSpace
-    // correctly detected this and disabled mask-based trust entirely
-    // (bypassed: true) rather than sampling garbage, but that only proved
-    // the bug existed -- it didn't fix it, since Phase 0/1's likelihood +
-    // geometry alone can't reject a hallucinated-but-anatomically-
-    // plausible skeleton (see REFERENCE_TRUST_FILTER_SOLUTION.md). Raw
-    // mode exists to skip ML Kit's own resize-to-image-dimensions step for
-    // per-frame latency; this analyzer runs once per reference photo, not
-    // per frame, so there's no latency reason to pay that coordinate-
-    // mapping complexity here. Removed -- ML Kit now returns a mask
-    // already scaled to the input image's own dimensions.
     final segmenter = SelfieSegmenter(mode: SegmenterMode.single);
     try {
       mask = await segmenter.processImage(inputImage);
@@ -641,15 +571,6 @@ class ReferenceImageAnalyzer {
     try {
       final bytes = await File(imagePath).readAsBytes();
       if (kDebugMode) {
-        // LIMITATIONS_AND_ROADMAP.md §"Possible non-determinism": the same
-        // source photo, picked twice, was once seen to produce two
-        // different outcomes. Before chasing a provider race, check
-        // whether the two picks are even the same bytes -- image_picker
-        // frequently writes a fresh temp path per pick, sometimes with
-        // re-encoding, even for the identical gallery asset. Log a cheap
-        // fingerprint alongside the raw detection output on each pass; if
-        // two repeated picks show different fingerprints, this was never a
-        // state bug.
         debugPrint(
           'ReferenceImageAnalyzer analyze: path=$imagePath '
           'bytes=${bytes.length} fingerprint=${_cheapFingerprint(bytes)}',
@@ -657,16 +578,6 @@ class ReferenceImageAnalyzer {
       }
       final rawDecoded = img.decodeImage(bytes);
       if (rawDecoded != null) {
-        // img.decodeImage() reads raw sensor-orientation pixels and does
-        // not apply the file's EXIF orientation tag on its own, while
-        // InputImage.fromFilePath() (used for pose/face detection above)
-        // does apply it. Without baking orientation here, decoded.width/
-        // height (and therefore ReferenceProfile.imageWidth/imageHeight,
-        // which the painter uses to scale landmark points) can end up in
-        // a different coordinate space than the landmarks themselves —
-        // landmarks come out correct but get mapped onto the wrong
-        // canvas dimensions, which is what produced the garbled skeleton
-        // lines on EXIF-rotated photos.
         decoded = img.bakeOrientation(rawDecoded);
         imageWidth = decoded.width.toDouble();
         imageHeight = decoded.height.toDouble();
@@ -685,10 +596,6 @@ class ReferenceImageAnalyzer {
     );
   }
 
-  /// Not a real hash — a cheap rolling checksum over the byte length plus a
-  /// sparse sample of the file, only meant to tell "same picked file twice"
-  /// apart from "different file, same photo" in a debug log. Don't use this
-  /// for anything that needs actual collision resistance.
   String _cheapFingerprint(List<int> bytes) {
     var acc = bytes.length;
     final step = bytes.length > 4096 ? bytes.length ~/ 4096 : 1;
@@ -727,12 +634,6 @@ class ReferenceImageAnalyzer {
     );
   }
 
-  /// Public + [visibleForTesting] so it can be unit-tested directly with a
-  /// plain confidences list instead of requiring a real on-device
-  /// segmentation pass (or a hand-built `SegmentationMask`, which has no
-  /// confirmed public constructor). Behavior is unchanged from the former
-  /// `_`-prefixed, `SegmentationMask`-typed version — this is a signature
-  /// change for testability only.
   @visibleForTesting
   double? estimateNegativeSpace(List<double> confidences) {
     if (confidences.isEmpty) return null;

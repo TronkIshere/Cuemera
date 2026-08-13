@@ -11,9 +11,6 @@ class CameraService {
   List<CameraDescription> _cameras = [];
   int _lensIndex = 0;
 
-  // Retained so capture() can resume the analysis stream with the same
-  // callback after takePicture(), without the caller having to re-supply
-  // it — see capture() below.
   void Function(CameraImage image)? _onImage;
 
   CameraController? get controller => _controller;
@@ -39,14 +36,6 @@ class CameraService {
     await _createController(_cameras[_lensIndex]);
   }
 
-  // Single init path for the merged controller: drives preview, capture,
-  // and (via startImageStream) the ML Kit analysis stream — CameraX (the
-  // camera plugin's Android backend) already negotiates one shared session
-  // across those three use cases; there is no need for (and no Dart-level
-  // API to support) a second independently-opened controller on the same
-  // lens. .high is the preset the old _previewController used for
-  // preview/capture; ML Kit frame-processing speed with this resolution
-  // still needs validating on a physical device.
   Future<void> _createController(CameraDescription description) async {
     await _controller?.dispose();
     _controller = CameraController(
@@ -70,9 +59,6 @@ class CameraService {
       await _controller!.stopImageStream();
     }
 
-    // No separate controller lifecycle anymore — capture() reuses the one
-    // shared controller instead of spinning up a temporary one per photo,
-    // so there is no setup/teardown step left to time.
     lastCaptureControllerSetupLatency = Duration.zero;
     lastCaptureControllerTeardownLatency = Duration.zero;
 
@@ -90,10 +76,6 @@ class CameraService {
         'shutter: ${lastCaptureShutterLatency?.inMilliseconds}ms '
         '(single shared controller — no separate setup/teardown)',
       );
-      // Resume the analysis stream regardless of whether takePicture()
-      // succeeded or threw, using the callback captured by the last
-      // startImageStream() call — the caller no longer needs to re-supply
-      // it after a capture.
       if (wasStreaming && _onImage != null && isInitialized) {
         await _controller!.startImageStream(_onImage!);
       }

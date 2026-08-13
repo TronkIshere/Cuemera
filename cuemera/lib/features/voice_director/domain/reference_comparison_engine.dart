@@ -10,10 +10,6 @@ import '../../scene_analysis/domain/models/scene_profile.dart';
 import '../../scene_analysis/domain/models/subject_profile.dart';
 
 class ReferenceComparisonEngine {
-  // Severity-band boundaries live on CoachingDecision now (single source of
-  // truth shared between the tiered-phrase text and CoachingDecision's own
-  // severityBand/dedupeKey) — kept as local aliases here so the existing
-  // _tieredPhrase call sites below don't all need to change.
   static const double _mildSeverityCeiling =
       CoachingDecision.mildSeverityCeiling;
   static const double _moderateSeverityCeiling =
@@ -312,9 +308,6 @@ class ReferenceComparisonEngine {
     );
   }
 
-  // direction here names the shoulder the correction acts on (matching the
-  // phrase text), not the side of excess deviation — unlike faceRoll above,
-  // where direction/phrase both describe the diagnosed tilt direction.
   _AttributeEvaluation? _evaluateShoulderBalance(
     SubjectProfile subject,
     ReferenceProfile reference,
@@ -429,8 +422,6 @@ class ReferenceComparisonEngine {
     );
   }
 
-  // direction here names the correction ("turn left/right"), matching the
-  // phrase text — same choice as _evaluateShoulderBalance above.
   _AttributeEvaluation? _evaluateBodyYaw(
     SubjectProfile subject,
     ReferenceProfile reference,
@@ -994,8 +985,6 @@ class _AttributeEvaluation {
   final bool deviationExceedsThreshold;
   final CoachingDecision decision;
 
-  // Derived rather than stored separately, so severity/phrase can never
-  // drift out of sync with the decision they came from.
   int get severity => (decision.normalizedSeverity * 10).round();
   String get phrase => decision.fallbackPhrase;
 }

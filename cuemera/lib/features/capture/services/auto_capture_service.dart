@@ -17,18 +17,7 @@ class AutoCaptureService {
     double trackingProgress,
     DetectionThresholds thresholds,
   ) {
-    // `eyesOpen` is currently disabled upstream (FaceAnalyzer always
-    // produces null for it), so this is intentionally no longer a gate —
-    // previously `subject.eyesOpen != true` would have permanently blocked
-    // every capture once the signal went permanently null.
     if (scene.brightness < thresholds.minBrightnessForCapture) return false;
-
-    // For each _xOk check below: reference null means the attribute isn't
-    // part of what we're matching (auto-pass). Subject null with a
-    // non-null reference means we can't currently measure it — e.g. the
-    // subject's shoulders/hips aren't in frame — and that must block
-    // capture, not silently pass, or a close-up-only framing bypasses
-    // pose matching entirely.
 
     final shoulderOk = _shoulderOk(subject, reference, tolerance);
     final faceOk = _faceOk(subject, reference, tolerance);
@@ -90,9 +79,6 @@ class AutoCaptureService {
         DateTime.now().difference(_lastCapture!).inMilliseconds >=
             thresholds.captureCooldownMs;
 
-    // No 'eyesOpen' key: it's no longer part of the capture decision (see
-    // shouldCapture), so reporting it here — as always-passing or
-    // otherwise — would be misleading debug output.
     return {
       'brightness': scene.brightness >= thresholds.minBrightnessForCapture,
       'shoulderAngle': shoulderOk,

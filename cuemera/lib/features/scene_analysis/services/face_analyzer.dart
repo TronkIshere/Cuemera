@@ -38,17 +38,13 @@ class FaceAnalyzer {
     }
 
     final smileProb = face.smilingProbability;
-    // Still computed (not deleted) so re-enabling later is a one-line flag
-    // flip, not a restore of deleted logic from git history.
+
     final expression = classifyExpression(
       smilingProbability: smileProb,
       leftEyeOpenProbability: leftOpen,
       rightEyeOpenProbability: rightOpen,
     );
 
-    // Single gate: whatever was just computed above for eyesOpen/expression
-    // is discarded here when the flag is off. Nothing else in this method
-    // depends on either value, so this is the only place the flag matters.
     if (!enableEyeAndExpressionSignals) {
       eyesOpen = null;
     }

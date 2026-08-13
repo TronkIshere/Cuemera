@@ -65,9 +65,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   final GlobalKey<State<DebugPerfOverlay>> _debugPerfOverlayKey =
       GlobalKey<State<DebugPerfOverlay>>();
 
-  // Captured once while the widget is still alive — ref.read()/ref.watch()
-  // cannot be called inside dispose() (the element is already being torn
-  // down by then), so we grab the service reference early and reuse it.
   late final CameraService _cameraService;
 
   @override
@@ -530,11 +527,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             builder: (context, ref, _) {
               final nextAction = ref.watch(nextActionProvider);
               if (nextAction == null) return const SizedBox.shrink();
-              // Shows whatever was actually spoken (AI-generated or
-              // fallback) rather than nextAction.phrase directly — those
-              // two can differ once AI coaching succeeds, and showing the
-              // rule-based text while a different phrase plays out loud
-              // was a real mismatch.
               final displayedPhrase =
                   ref.watch(displayedCoachingPhraseProvider) ??
                   nextAction.phrase;

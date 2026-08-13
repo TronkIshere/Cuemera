@@ -48,10 +48,6 @@ class ReferenceProfile {
   final double? faceAngleZDegrees;
   final double? shoulderAngleDegrees;
 
-  // See SubjectProfile.shoulderBalanceRatio/shoulderSpanRatio/
-  // bodyYawEstimate for sign conventions and normalization — same
-  // definitions, computed here from the reference photo's pose landmarks
-  // in ReferenceImageAnalyzer._analyzePose instead of the live feed.
   final double? shoulderBalanceRatio;
   final double? shoulderSpanRatio;
   final double? bodyYawEstimate;
@@ -70,11 +66,8 @@ class ReferenceProfile {
   final double? eyeOpenRatio;
   final List<Offset?>? poseLandmarkPoints;
 
-  /// Bounding box corners (4 points) — kept for backward compatibility.
   final List<Offset>? faceContourPoints;
 
-  /// Detailed contour groups (may be null if enableContours failed or
-  /// the face was not detected with enough confidence).
   final List<Offset>? faceOvalPoints;
   final List<Offset>? leftEyeContour;
   final List<Offset>? rightEyeContour;

@@ -24,21 +24,10 @@ class SubjectProfile {
   final double? eyeOpenRatio;
   final double? shoulderAngleDegrees;
 
-  // Positive: subject's left shoulder sits lower (larger y) than the right.
-  // Negative: right shoulder sits lower. Normalized by shoulder-width in
-  // pixels, so it's scale-invariant regardless of distance from camera.
   final double? shoulderBalanceRatio;
 
-  // Shoulder width normalized by torso height (shoulder-midpoint to
-  // hip-midpoint distance). Bigger = broader/more spread shoulders
-  // relative to torso; smaller = narrower/hunched.
   final double? shoulderSpanRatio;
 
-  // Torso rotation in degrees, derived from ML Kit's experimental
-  // shoulder z-depth (less accurate than x/y). Same left/right sign
-  // ambiguity as shoulderAngleDegrees/faceAngleZDegrees — unverified on
-  // a physical device, see _bodyYawDirectionIsMirrored in
-  // ReferenceComparisonEngine.
   final double? bodyYawEstimate;
 
   final bool? eyesOpen;

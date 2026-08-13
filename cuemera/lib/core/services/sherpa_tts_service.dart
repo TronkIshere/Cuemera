@@ -44,9 +44,6 @@ class SherpaTtsService {
           debug: false,
           provider: 'cpu',
         ),
-        // "maxNumSenetences" (sic) — this is the actual field name shipped
-        // in the sherpa_onnx package (confirmed against multiple official
-        // examples), not a typo on our end.
         maxNumSenetences: 1,
       );
 
@@ -62,13 +59,6 @@ class SherpaTtsService {
     }
   }
 
-  /// Extracts the bundled VITS assets to a writable directory.
-  ///
-  /// Verifies the three files/dirs sherpa_onnx actually needs are present
-  /// on disk before trusting a leftover ".extracted" marker from a prior
-  /// (possibly incomplete) run — a stale marker used to cause every
-  /// subsequent launch to silently skip re-extraction even after fixing
-  /// pubspec.yaml's asset list, since the check used to be marker-only.
   Future<String> _ensureModelExtracted() async {
     final supportDir = await getApplicationSupportDirectory();
     final targetDir = Directory('${supportDir.path}/vits-en');
@@ -125,8 +115,6 @@ class SherpaTtsService {
     return targetDir.path;
   }
 
-  /// True only if the files sherpa_onnx actually needs are present.
-  /// Extend this list if your model uses a lexicon/dict dir too.
   Future<bool> _looksComplete(Directory targetDir) async {
     final requiredPaths = [
       '${targetDir.path}/model.onnx',
@@ -185,8 +173,6 @@ class SherpaTtsService {
     return '$withoutPeriod!';
   }
 
-  /// [force] bypasses the same-phrase dedupe — see TtsService.speak() for
-  /// why this matters for one-off confirmations vs. per-frame coaching.
   Future<void> speak(
     String phrase, {
     TtsEmphasis emphasis = TtsEmphasis.mild,
