@@ -1,4 +1,5 @@
 // core/services/app_tts_service.dart
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'sherpa_tts_service.dart';
@@ -38,12 +39,18 @@ class AppTtsService {
     required TtsEmphasis emphasis,
     required bool force,
   }) async {
+    debugPrint(
+      'AppTtsService: speaking "$phrase" (sherpa.isReady=${sherpa.isReady})',
+    );
     if (sherpa.isReady) {
       try {
         await sherpa.speak(phrase, emphasis: emphasis, force: force);
         return;
-      } catch (_) {
-        // Falls through to flutter_tts below.
+      } catch (e, st) {
+        debugPrint(
+          'AppTtsService: sherpa.speak() failed, falling back to flutter_tts: $e',
+        );
+        debugPrint('$st');
       }
     }
     await fallback.speak(phrase, force: force);

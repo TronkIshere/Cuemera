@@ -1,11 +1,10 @@
 // core/services/sherpa_tts_service.dart
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
@@ -21,6 +20,16 @@ class SherpaTtsService {
   final AudioPlayer _player = AudioPlayer();
   bool _ready = false;
   String? _lastPhrase;
+
+  /// Set by sherpaTtsServiceProvider right after construction. A splash
+  /// screen (or anything that runs before the coaching flow starts) can
+  /// `await ref.read(sherpaTtsServiceProvider).initFuture` to make sure
+  /// sherpa is actually ready before the first coaching phrase might be
+  /// spoken, instead of racing it — currently nothing awaits this, so
+  /// init() only starts once the coaching screen first watches this
+  /// provider, and may well still be extracting assets when the first
+  /// speak() call happens.
+  Future<void>? initFuture;
 
   bool get isReady => _ready;
 
@@ -75,15 +84,15 @@ class SherpaTtsService {
       'SherpaTtsService: (re)extracting model assets to ${targetDir.path}',
     );
 
-    final manifestJson = await rootBundle.loadString('AssetManifest.json');
-    final manifest = json.decode(manifestJson) as Map<String, dynamic>;
-    final assetPaths = manifest.keys
+    final assetManifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final assetPaths = assetManifest
+        .listAssets()
         .where((k) => k.startsWith(assetPrefix))
         .toList();
 
     debugPrint(
       'SherpaTtsService: found ${assetPaths.length} bundled asset(s) under '
-      '"$assetPrefix" in AssetManifest.json',
+      '"$assetPrefix" via AssetManifest',
     );
     if (assetPaths.isEmpty) {
       throw StateError(
@@ -182,6 +191,10 @@ class SherpaTtsService {
     if (!force && phrase == _lastPhrase) return;
     _lastPhrase = phrase;
 
+    debugPrint('SherpaTtsService.speak(): generating for "$phrase"');
+
+    StreamSubscription<void>? completeSub;
+    StreamSubscription<PlayerState>? stateSub;
     try {
       final genConfig = sherpa_onnx.OfflineTtsGenerationConfig(
         sid: 0,
@@ -217,8 +230,6 @@ class SherpaTtsService {
         if (!completer.isCompleted) completer.complete();
       }
 
-      late final StreamSubscription<void> completeSub;
-      late final StreamSubscription<PlayerState> stateSub;
       completeSub = _player.onPlayerComplete.listen((_) => finish());
       stateSub = _player.onPlayerStateChanged.listen((state) {
         if (state == PlayerState.stopped || state == PlayerState.disposed) {
@@ -226,13 +237,16 @@ class SherpaTtsService {
         }
       });
       await _player.play(DeviceFileSource(wavPath));
-      await completer.future;
-      await completeSub.cancel();
-      await stateSub.cancel();
+      await completer.future.timeout(const Duration(seconds: 15));
+      debugPrint('SherpaTtsService.speak(): playback completed for "$phrase"');
     } catch (e, st) {
       debugPrint('SherpaTtsService.speak() FAILED: $e');
       debugPrint('$st');
+      await _player.stop();
       rethrow; // let AppTtsService catch this and fall back to flutter_tts
+    } finally {
+      await completeSub?.cancel();
+      await stateSub?.cancel();
     }
   }
 
@@ -249,7 +263,7 @@ class SherpaTtsService {
 
 final sherpaTtsServiceProvider = Provider<SherpaTtsService>((ref) {
   final service = SherpaTtsService();
-  service.init();
+  service.initFuture = service.init();
   ref.onDispose(() => service.dispose());
   return service;
 });

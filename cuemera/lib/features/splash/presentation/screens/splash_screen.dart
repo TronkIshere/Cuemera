@@ -9,12 +9,15 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/memory_service.dart';
 import '../../../../core/services/ml_kit_service.dart';
+import '../../../../core/services/sherpa_tts_service.dart';
 import '../../../../core/services/theme_preference_service.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../../../shared/widgets/primary_button.dart';
 import '../../../home/presentation/screens/home_screen.dart';
 
 final splashInitProvider = FutureProvider.autoDispose<void>((ref) async {
+  final sherpa = ref.read(sherpaTtsServiceProvider);
+
   await ref.read(themeModeProvider.notifier).load();
 
   final cameraStatus = await Permission.camera.request();
@@ -25,6 +28,10 @@ final splashInitProvider = FutureProvider.autoDispose<void>((ref) async {
 
   ref.read(mlKitServiceProvider);
   await ref.read(memoryServiceProvider.future);
+  await sherpa.initFuture?.timeout(
+    const Duration(seconds: 8),
+    onTimeout: () {},
+  );
 });
 
 class SplashScreen extends ConsumerWidget {

@@ -52,6 +52,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   DateTime _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _throttleInterval = Duration(milliseconds: 80);
 
+  DateTime _lastDebugSnapshotLog = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _debugSnapshotLogInterval = Duration(milliseconds: 500);
+
   final LightAnalyzer _lightAnalyzer = LightAnalyzer();
 
   SegmentationMask? _latestMask;
@@ -136,6 +139,43 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final cameraService = ref.read(cameraServiceProvider);
     final controller = cameraService.controller;
     if (controller == null) return;
+
+    if (kDebugMode &&
+        now.difference(_lastDebugSnapshotLog) >= _debugSnapshotLogInterval) {
+      _lastDebugSnapshotLog = now;
+      final subject = ref.read(subjectProfileProvider);
+      debugPrint(
+        'mirror_check: lens=${controller.description.lensDirection.name} '
+        'deviceOrientation=${controller.value.deviceOrientation.name} '
+        'shoulderAngleDegrees=${subject.shoulderAngleDegrees?.toStringAsFixed(1)} '
+        'shoulderBalanceRatio=${subject.shoulderBalanceRatio?.toStringAsFixed(3)} '
+        'faceAngleZDegrees(roll)=${subject.faceAngleZDegrees?.toStringAsFixed(1)} '
+        'faceAngleDegrees(yaw)=${subject.faceAngleDegrees?.toStringAsFixed(1)} '
+        'bodyYawEstimate=${subject.bodyYawEstimate?.toStringAsFixed(1)}',
+      );
+
+      final target = ref.read(targetSubjectProfileProvider);
+      final scene = ref.read(sceneProfileProvider);
+      final targetScene = ref.read(targetSceneProfileProvider);
+      final progress = ref.read(trackingProgressProvider);
+      String diff(String label, double? current, double? targetValue) {
+        if (current == null || targetValue == null) {
+          return '$label=n/a(current=$current,target=$targetValue)';
+        }
+        return '$label=${(current - targetValue).abs().toStringAsFixed(2)}'
+            '(cur=${current.toStringAsFixed(2)},tgt=${targetValue.toStringAsFixed(2)})';
+      }
+
+      debugPrint(
+        'auto_capture_check: trackingProgress=${progress.toStringAsFixed(3)} '
+        '${diff('bodyRatio', subject.bodyRatio, target.bodyRatio)} '
+        '${diff('shoulderAngle', subject.shoulderAngleDegrees, target.shoulderAngleDegrees)} '
+        '${diff('shoulderBalance', subject.shoulderBalanceRatio, target.shoulderBalanceRatio)} '
+        '${diff('bodyYaw', subject.bodyYawEstimate, target.bodyYawEstimate)} '
+        '${diff('faceAngle', subject.faceAngleDegrees, target.faceAngleDegrees)} '
+        '${diff('brightness', scene.brightness, targetScene.brightness)}',
+      );
+    }
 
     mlKitService.processImage(
       image,
