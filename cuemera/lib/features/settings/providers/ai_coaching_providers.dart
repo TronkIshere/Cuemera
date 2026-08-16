@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/memory_service.dart';
 import '../../voice_director/providers/coaching_phrase_model_providers.dart';
 
@@ -104,7 +105,12 @@ class AiCoachingSettingsNotifier extends StateNotifier<AiCoachingSettings> {
         },
       );
       state = state.copyWith(isInstalling: false, installProgress: 100);
-    } catch (_) {
+    } catch (e, st) {
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'ai_coaching_providers: model initialization failure',
+      );
       state = state.copyWith(
         isInstalling: false,
         installError: 'Download failed. Using standard coaching for now.',

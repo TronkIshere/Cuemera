@@ -1,4 +1,6 @@
 // core/services/tracking_engine.dart
+import 'dart:math' as math;
+
 import 'package:cuemera/features/reference_photo/domain/comparison_math.dart';
 import 'package:cuemera/features/reference_photo/domain/models/detection_thresholds.dart';
 import 'package:cuemera/features/reference_photo/domain/models/tolerance_settings.dart';
@@ -26,6 +28,9 @@ class TrackingEngine {
   int _mouthOpenMissingStreak = 0;
   int _eyeOpenRatioMissingStreak = 0;
   int _shoulderAngleMissingStreak = 0;
+  int _shoulderBalanceMissingStreak = 0;
+  int _shoulderSpanMissingStreak = 0;
+  int _bodyYawMissingStreak = 0;
   int _eyesOpenMissingStreak = 0;
   int _expressionMissingStreak = 0;
   int _lightDirectionMissingStreak = 0;
@@ -35,6 +40,27 @@ class TrackingEngine {
     if (raw == null) return previous;
     if (previous == null) return raw;
     return previous + thresholds.emaAlpha * (raw - previous);
+  }
+
+  /// Same as [_ema] but for angle-like quantities that wrap at ±180°
+  /// (shoulderAngleDegrees) — averages via unit-vector (cos, sin) components
+  /// instead of the raw degree value, so a subject oscillating across the
+  /// ±180° boundary smooths to the true small delta instead of jumping
+  /// through 0°. Same fix already applied to ComparisonMath.circularDeviation
+  /// (reference_comparison_engine.dart, TrackingEngine.trackingProgress) —
+  /// this closes the third, previously-unfixed place this bug class hid.
+  double? _circularEma(double? raw, double? previous) {
+    if (raw == null) return previous;
+    if (previous == null) return raw;
+    final rawRad = raw * math.pi / 180.0;
+    final prevRad = previous * math.pi / 180.0;
+    final cosSmoothed =
+        math.cos(prevRad) +
+        thresholds.emaAlpha * (math.cos(rawRad) - math.cos(prevRad));
+    final sinSmoothed =
+        math.sin(prevRad) +
+        thresholds.emaAlpha * (math.sin(rawRad) - math.sin(prevRad));
+    return math.atan2(sinSmoothed, cosSmoothed) * 180.0 / math.pi;
   }
 
   int _bumpMissingStreak(int streak, bool rawIsNull) {
@@ -70,6 +96,18 @@ class TrackingEngine {
       _shoulderAngleMissingStreak,
       raw.shoulderAngleDegrees == null,
     );
+    _shoulderBalanceMissingStreak = _bumpMissingStreak(
+      _shoulderBalanceMissingStreak,
+      raw.shoulderBalanceRatio == null,
+    );
+    _shoulderSpanMissingStreak = _bumpMissingStreak(
+      _shoulderSpanMissingStreak,
+      raw.shoulderSpanRatio == null,
+    );
+    _bodyYawMissingStreak = _bumpMissingStreak(
+      _bodyYawMissingStreak,
+      raw.bodyYawEstimate == null,
+    );
 
     var bodyRatio = _ema(raw.bodyRatio, previous.bodyRatio);
     if (_bodyRatioMissingStreak >= thresholds.debounceFrames) bodyRatio = null;
@@ -81,7 +119,7 @@ class TrackingEngine {
     if (_faceAngleMissingStreak >= thresholds.debounceFrames)
       faceAngleDegrees = null;
 
-    var faceAngleXDegrees = _ema(
+    var faceAngleXDegrees = _circularEma(
       raw.faceAngleXDegrees,
       previous.faceAngleXDegrees,
     );
@@ -89,7 +127,7 @@ class TrackingEngine {
       faceAngleXDegrees = null;
     }
 
-    var faceAngleZDegrees = _ema(
+    var faceAngleZDegrees = _circularEma(
       raw.faceAngleZDegrees,
       previous.faceAngleZDegrees,
     );
@@ -107,12 +145,36 @@ class TrackingEngine {
       eyeOpenRatio = null;
     }
 
-    var shoulderAngleDegrees = _ema(
+    var shoulderAngleDegrees = _circularEma(
       raw.shoulderAngleDegrees,
       previous.shoulderAngleDegrees,
     );
     if (_shoulderAngleMissingStreak >= thresholds.debounceFrames) {
       shoulderAngleDegrees = null;
+    }
+
+    var shoulderBalanceRatio = _ema(
+      raw.shoulderBalanceRatio,
+      previous.shoulderBalanceRatio,
+    );
+    if (_shoulderBalanceMissingStreak >= thresholds.debounceFrames) {
+      shoulderBalanceRatio = null;
+    }
+
+    var shoulderSpanRatio = _ema(
+      raw.shoulderSpanRatio,
+      previous.shoulderSpanRatio,
+    );
+    if (_shoulderSpanMissingStreak >= thresholds.debounceFrames) {
+      shoulderSpanRatio = null;
+    }
+
+    var bodyYawEstimate = _circularEma(
+      raw.bodyYawEstimate,
+      previous.bodyYawEstimate,
+    );
+    if (_bodyYawMissingStreak >= thresholds.debounceFrames) {
+      bodyYawEstimate = null;
     }
 
     bool? eyesOpen = previous.eyesOpen;
@@ -160,8 +222,12 @@ class TrackingEngine {
       mouthOpenRatio: mouthOpenRatio,
       eyeOpenRatio: eyeOpenRatio,
       shoulderAngleDegrees: shoulderAngleDegrees,
+      shoulderBalanceRatio: shoulderBalanceRatio,
+      shoulderSpanRatio: shoulderSpanRatio,
+      bodyYawEstimate: bodyYawEstimate,
       eyesOpen: eyesOpen,
       expression: expression,
+      metricConfidence: raw.metricConfidence,
       timestamp: DateTime.now(),
     );
   }

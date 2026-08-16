@@ -39,6 +39,7 @@ class ReferenceProfile {
     this.noseBottomContour,
     this.imageWidth,
     this.imageHeight,
+    this.metricConfidence,
   });
 
   final String imagePath;
@@ -83,6 +84,14 @@ class ReferenceProfile {
   final double? imageWidth;
   final double? imageHeight;
 
+  /// Per-metric confidence in [0, 1], keyed by field name — same idiom as
+  /// SubjectProfile.metricConfidence, populated by
+  /// ReferenceImageAnalyzer from core/pose/landmark_gate.dart's per-landmark
+  /// trust. A metric with no entry has no known confidence signal yet.
+  final Map<String, double>? metricConfidence;
+
+  double confidenceFor(String metric) => metricConfidence?[metric] ?? 1.0;
+
   ReferenceProfile copyWith({
     String? imagePath,
     double? bodyRatio,
@@ -120,6 +129,7 @@ class ReferenceProfile {
     List<Offset>? noseBottomContour,
     double? imageWidth,
     double? imageHeight,
+    Map<String, double>? metricConfidence,
   }) {
     return ReferenceProfile(
       imagePath: imagePath ?? this.imagePath,
@@ -165,6 +175,7 @@ class ReferenceProfile {
       noseBottomContour: noseBottomContour ?? this.noseBottomContour,
       imageWidth: imageWidth ?? this.imageWidth,
       imageHeight: imageHeight ?? this.imageHeight,
+      metricConfidence: metricConfidence ?? this.metricConfidence,
     );
   }
 }

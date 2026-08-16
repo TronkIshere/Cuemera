@@ -9,6 +9,7 @@ import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/theme_preference_service.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../providers/ai_coaching_providers.dart';
+import '../../providers/coaching_v2_settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -22,6 +23,9 @@ class SettingsScreen extends ConsumerWidget {
 
     final aiCoaching = ref.watch(aiCoachingSettingsProvider);
     final aiCoachingNotifier = ref.read(aiCoachingSettingsProvider.notifier);
+
+    final coachingV2 = ref.watch(coachingV2SettingsProvider);
+    final coachingV2Notifier = ref.read(coachingV2SettingsProvider.notifier);
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -127,6 +131,70 @@ class SettingsScreen extends ConsumerWidget {
                           ).copyWith(color: colors.warning),
                         ),
                       ],
+                      if (aiCoaching.enabled &&
+                          !aiCoaching.isInstalling &&
+                          aiCoaching.aiUnavailable) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'AI coaching paused after repeated errors — using standard coaching for now.',
+                                style: AppTypography.caption(
+                                  colors,
+                                ).copyWith(color: colors.warning),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            GestureDetector(
+                              onTap: () => aiCoachingNotifier.setEnabled(true),
+                              child: Text(
+                                'Retry',
+                                style: AppTypography.caption(colors).copyWith(
+                                  color: colors.accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _SettingsCard(
+                  colors: colors,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Coaching v2 (experimental)',
+                              style: AppTypography.body(
+                                colors,
+                              ).copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'State-machine-driven coaching with '
+                              'closed-loop follow-up. Not yet '
+                              'device-verified — off by default.',
+                              style: AppTypography.caption(
+                                colors,
+                              ).copyWith(color: colors.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: coachingV2.enabled,
+                        onChanged: (value) =>
+                            coachingV2Notifier.setEnabled(value),
+                      ),
                     ],
                   ),
                 ),

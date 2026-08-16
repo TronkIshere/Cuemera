@@ -2,6 +2,7 @@
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma_mediapipe/flutter_gemma_mediapipe.dart';
 
+import '../../../core/services/error_reporting_service.dart';
 import '../models/coaching_decision.dart';
 
 class CoachingPhraseModelService {
@@ -46,6 +47,13 @@ class CoachingPhraseModelService {
           .install();
 
       _model = await FlutterGemma.getActiveModel(maxTokens: 512);
+    } catch (e, st) {
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'coaching_phrase_model_service: model initialization failure',
+      );
+      rethrow;
     } finally {
       _installing = false;
     }
@@ -66,7 +74,12 @@ class CoachingPhraseModelService {
 
       final text = response.trim();
       return text.isEmpty ? null : text;
-    } catch (_) {
+    } catch (e, st) {
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'coaching_phrase_model_service: inference failure',
+      );
       return null;
     } finally {
       _generating = false;

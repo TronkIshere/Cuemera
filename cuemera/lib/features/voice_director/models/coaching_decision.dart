@@ -1,5 +1,8 @@
 // features/voice_director/domain/models/coaching_decision.dart
 
+import 'package:cuemera/features/voice_director/domain/action_plan.dart'
+    show ActionControllability;
+
 enum CoachingAttribute {
   shoulderAngle,
   facePitch,
@@ -33,6 +36,8 @@ class CoachingDecision {
     required this.tier,
     required this.normalizedSeverity,
     required this.fallbackPhrase,
+    required this.confidence,
+    required this.controllability,
     this.targetExpression,
   });
 
@@ -44,6 +49,10 @@ class CoachingDecision {
   final CoachingTier tier;
   final double normalizedSeverity;
   final String fallbackPhrase;
+
+  final double confidence;
+
+  final ActionControllability controllability;
 
   final String? targetExpression;
 

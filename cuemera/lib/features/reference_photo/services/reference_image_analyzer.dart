@@ -27,6 +27,7 @@ class _PoseAnalysisResult {
   final double? shoulderSpanRatio;
   final double? bodyYawEstimate;
   final List<Offset?>? poseLandmarkPoints;
+  final Map<String, double>? metricConfidence;
 
   const _PoseAnalysisResult({
     this.bodyRatio,
@@ -35,6 +36,7 @@ class _PoseAnalysisResult {
     this.shoulderSpanRatio,
     this.bodyYawEstimate,
     this.poseLandmarkPoints,
+    this.metricConfidence,
   });
 }
 
@@ -201,6 +203,7 @@ class ReferenceImageAnalyzer {
       eyeOpenRatio: faceResult.eyeOpenRatio,
       imageWidth: decodedResult.imageWidth,
       imageHeight: decodedResult.imageHeight,
+      metricConfidence: poseResult.metricConfidence,
     );
   }
 
@@ -415,7 +418,70 @@ class ReferenceImageAnalyzer {
       shoulderSpanRatio: shoulderSpanRatio,
       bodyYawEstimate: bodyYawEstimate,
       poseLandmarkPoints: gate.hasTrustedPoints ? gate.trustedPoints : null,
+      metricConfidence: _poseMetricConfidence(
+        gate,
+        shoulderAngleDegrees: shoulderAngleDegrees,
+        shoulderBalanceRatio: shoulderBalanceRatio,
+        shoulderSpanRatio: shoulderSpanRatio,
+        bodyYawEstimate: bodyYawEstimate,
+        bodyRatio: bodyRatio,
+      ),
     );
+  }
+
+  /// Same metric-confidence idiom as PoseAnalyzer (live path) — kept as an
+  /// identical, independent implementation rather than a shared import,
+  /// since this analyzer already reconciles [gate] against crop-redetect
+  /// evidence (Phase 2) before this point, unlike the live path's
+  /// single-detection gate.
+  Map<String, double>? _poseMetricConfidence(
+    PoseLandmarkGate gate, {
+    required double? shoulderAngleDegrees,
+    required double? shoulderBalanceRatio,
+    required double? shoulderSpanRatio,
+    required double? bodyYawEstimate,
+    required double? bodyRatio,
+  }) {
+    double minConfidence(List<PoseLandmarkType> types) {
+      var lowest = 1.0;
+      for (final type in types) {
+        final value = gate.trust(type)?.confidence.value ?? 0.0;
+        if (value < lowest) lowest = value;
+      }
+      return lowest;
+    }
+
+    final result = <String, double>{
+      if (shoulderAngleDegrees != null)
+        'shoulderAngleDegrees': minConfidence([
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+        ]),
+      if (shoulderBalanceRatio != null)
+        'shoulderBalanceRatio': minConfidence([
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+        ]),
+      if (bodyYawEstimate != null)
+        'bodyYawEstimate': minConfidence([
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+        ]),
+      if (shoulderSpanRatio != null)
+        'shoulderSpanRatio': minConfidence([
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+          PoseLandmarkType.leftHip,
+          PoseLandmarkType.rightHip,
+        ]),
+      if (bodyRatio != null)
+        'bodyRatio': minConfidence([
+          PoseLandmarkType.nose,
+          PoseLandmarkType.leftHip,
+          PoseLandmarkType.leftAnkle,
+        ]),
+    };
+    return result.isEmpty ? null : result;
   }
 
   Future<_FaceAnalysisResult> _analyzeFace(InputImage inputImage) async {

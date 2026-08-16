@@ -1,7 +1,10 @@
 // features/voice_director/domain/reference_comparison_engine.dart
-import 'package:cuemera/features/voice_director/domain/priority_engine.dart';
+import 'package:cuemera/features/voice_director/domain/action_plan.dart';
+import 'package:cuemera/features/voice_director/domain/root_cause_engine.dart';
 import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
+import 'package:flutter/foundation.dart';
 
+import '../../../core/confidence/confidence.dart';
 import '../../reference_photo/domain/comparison_math.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
 import '../../reference_photo/domain/models/tolerance_settings.dart';
@@ -28,24 +31,25 @@ class ReferenceComparisonEngine {
     return strong;
   }
 
-  PriorityAction? _pickWorst(List<_AttributeEvaluation> tier) {
-    final exceeding = tier
-        .where((candidate) => candidate.deviationExceedsThreshold)
-        .toList();
-    if (exceeding.isEmpty) return null;
+  final RootCauseEngine _rootCause = const RootCauseEngine();
+  int _tierRotation = 0;
 
-    exceeding.sort((a, b) => b.severity.compareTo(a.severity));
-    final worst = exceeding.first;
-
-    return PriorityAction(
-      phrase: worst.phrase,
-      severity: worst.severity,
+  ActionPlan _toActionPlan(_AttributeEvaluation evaluation) {
+    return ActionPlan(
+      phrase: evaluation.phrase,
+      decision: evaluation.decision,
       sourceLayer: 'reference_comparison_engine',
-      decision: worst.decision,
+      confidence: evaluation.decision.confidence,
+      controllability: evaluation.decision.controllability,
     );
   }
 
-  PriorityAction? evaluate({
+  /// Builds the three tiers' exceeding-threshold candidates as [ActionPlan]s
+  /// (pose/face root-cause-collapsed), without picking a single winner —
+  /// shared by [evaluate] (which picks one via [pickAcrossTiers]) and the
+  /// state-machine listener (step 10), which needs the raw per-tier lists
+  /// for its own eligibility filtering + selection.
+  TierCandidates evaluateTiers({
     required SubjectProfile subject,
     required SceneProfile scene,
     required ReferenceProfile reference,
@@ -123,9 +127,55 @@ class ReferenceComparisonEngine {
     addIfPresent(lightingTier, _evaluateWarmth(scene, reference, tolerance));
     addIfPresent(lightingTier, _evaluateHue(scene, reference, tolerance));
 
-    return _pickWorst(poseAndFaceTier) ??
-        _pickWorst(compositionTier) ??
-        _pickWorst(lightingTier);
+    final poseCandidates = _rootCause.collapse(
+      poseAndFaceTier
+          .where((c) => c.deviationExceedsThreshold)
+          .map(_toActionPlan)
+          .toList(),
+    );
+    final compositionCandidates = compositionTier
+        .where((c) => c.deviationExceedsThreshold)
+        .map(_toActionPlan)
+        .toList();
+    final lightingCandidates = lightingTier
+        .where((c) => c.deviationExceedsThreshold)
+        .map(_toActionPlan)
+        .toList();
+
+    debugPrint(
+      'pick_worst: pose=[${poseCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}] '
+      'composition=[${compositionCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}] '
+      'lighting=[${lightingCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}]',
+    );
+
+    return TierCandidates(
+      poseAndFace: poseCandidates,
+      composition: compositionCandidates,
+      lighting: lightingCandidates,
+    );
+  }
+
+  PriorityAction? evaluate({
+    required SubjectProfile subject,
+    required SceneProfile scene,
+    required ReferenceProfile reference,
+    required ToleranceSettings tolerance,
+  }) {
+    final tiers = evaluateTiers(
+      subject: subject,
+      scene: scene,
+      reference: reference,
+      tolerance: tolerance,
+    );
+
+    final chosen = pickAcrossTiers(
+      poseAndFace: tiers.poseAndFace,
+      composition: tiers.composition,
+      lighting: tiers.lighting,
+      tierRotation: _tierRotation,
+    );
+    _tierRotation++;
+    return chosen;
   }
 
   _AttributeEvaluation? _evaluateShoulderAngle(
@@ -137,7 +187,13 @@ class ReferenceComparisonEngine {
     final referenceValue = reference.shoulderAngleDegrees;
     if (subjectValue == null || referenceValue == null) return null;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
+    final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+    final isSubjectGreater = signedDiff > 0;
     final normalizedSeverity = ComparisonMath.normalizedSeverity(
       deviation,
       ComparisonMath.maxDeviationForPose,
@@ -150,7 +206,7 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final phrase = subjectValue > referenceValue
+    final phrase = isSubjectGreater
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Square your shoulders just a touch',
@@ -170,12 +226,18 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.shoulderAngle,
-        direction: subjectValue > referenceValue
+        direction: isSubjectGreater
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('shoulderAngleDegrees')),
+          Confidence(reference.confidenceFor('shoulderAngleDegrees')),
+        ).value,
+        controllability:
+            kAttributeControllability[CoachingAttribute.shoulderAngle]!,
       ),
     );
   }
@@ -189,7 +251,13 @@ class ReferenceComparisonEngine {
     final referenceValue = reference.faceAngleXDegrees;
     if (subjectValue == null || referenceValue == null) return null;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
+    final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+    final isSubjectGreater = signedDiff > 0;
     final normalizedSeverity = ComparisonMath.normalizedSeverity(
       deviation,
       ComparisonMath.maxDeviationForPose,
@@ -202,7 +270,7 @@ class ReferenceComparisonEngine {
       thresholdForPose,
     );
 
-    final phrase = subjectValue > referenceValue
+    final phrase = isSubjectGreater
         ? _tieredPhrase(
             normalizedSeverity,
             mild: 'Tilt your chin down just a touch',
@@ -222,12 +290,16 @@ class ReferenceComparisonEngine {
       deviationExceedsThreshold: deviationExceedsThreshold,
       decision: CoachingDecision(
         attribute: CoachingAttribute.facePitch,
-        direction: subjectValue > referenceValue
+        direction: isSubjectGreater
             ? CoachingDirection.decrease
             : CoachingDirection.increase,
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability:
+            kAttributeControllability[CoachingAttribute.facePitch]!,
       ),
     );
   }
@@ -241,7 +313,12 @@ class ReferenceComparisonEngine {
     final referenceValue = reference.faceAngleZDegrees;
     if (subjectValue == null || referenceValue == null) return null;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
+    final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
     final normalizedSeverity = ComparisonMath.normalizedSeverity(
       deviation,
       ComparisonMath.maxDeviationForPose,
@@ -255,8 +332,8 @@ class ReferenceComparisonEngine {
     );
 
     final subjectTiltedMoreTowardRight = _faceRollDirectionIsMirrored
-        ? subjectValue < referenceValue
-        : subjectValue > referenceValue;
+        ? signedDiff < 0
+        : signedDiff > 0;
 
     final phrase = subjectTiltedMoreTowardRight
         ? _tieredPhrase(
@@ -284,6 +361,9 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability: kAttributeControllability[CoachingAttribute.faceRoll]!,
       ),
     );
   }
@@ -340,6 +420,12 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('shoulderBalanceRatio')),
+          Confidence(reference.confidenceFor('shoulderBalanceRatio')),
+        ).value,
+        controllability:
+            kAttributeControllability[CoachingAttribute.shoulderBalance]!,
       ),
     );
   }
@@ -398,6 +484,12 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('shoulderSpanRatio')),
+          Confidence(reference.confidenceFor('shoulderSpanRatio')),
+        ).value,
+        controllability:
+            kAttributeControllability[CoachingAttribute.shoulderSpan]!,
       ),
     );
   }
@@ -411,7 +503,12 @@ class ReferenceComparisonEngine {
     final referenceValue = reference.bodyYawEstimate;
     if (subjectValue == null || referenceValue == null) return null;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
+    final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
     final normalizedSeverity = ComparisonMath.normalizedSeverity(
       deviation,
       ComparisonMath.maxDeviationForPose,
@@ -425,8 +522,8 @@ class ReferenceComparisonEngine {
     );
 
     final subjectTurnedMoreTowardRight = _bodyYawDirectionIsMirrored
-        ? subjectValue < referenceValue
-        : subjectValue > referenceValue;
+        ? signedDiff < 0
+        : signedDiff > 0;
 
     final phrase = subjectTurnedMoreTowardRight
         ? _tieredPhrase(
@@ -454,6 +551,11 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('bodyYawEstimate')),
+          Confidence(reference.confidenceFor('bodyYawEstimate')),
+        ).value,
+        controllability: kAttributeControllability[CoachingAttribute.bodyYaw]!,
       ),
     );
   }
@@ -501,6 +603,12 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('bodyRatio')),
+          Confidence(reference.confidenceFor('bodyRatio')),
+        ).value,
+        controllability:
+            kAttributeControllability[CoachingAttribute.bodyRatio]!,
       ),
     );
   }
@@ -558,6 +666,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability:
+            kAttributeControllability[CoachingAttribute.mouthOpen]!,
       ),
     );
   }
@@ -615,6 +727,9 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability: kAttributeControllability[CoachingAttribute.eyeOpen]!,
       ),
     );
   }
@@ -649,6 +764,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: deviation,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability:
+            kAttributeControllability[CoachingAttribute.expression]!,
         targetExpression: referenceValue,
       ),
     );
@@ -702,6 +821,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.composition,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability:
+            kAttributeControllability[CoachingAttribute.negativeSpace]!,
       ),
     );
   }
@@ -744,6 +867,9 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.composition,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability: kAttributeControllability[CoachingAttribute.symmetry]!,
       ),
     );
   }
@@ -796,6 +922,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.lighting,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability:
+            kAttributeControllability[CoachingAttribute.brightness]!,
       ),
     );
   }
@@ -853,6 +983,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.composition,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability:
+            kAttributeControllability[CoachingAttribute.backgroundClutter]!,
       ),
     );
   }
@@ -905,6 +1039,9 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.lighting,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability: kAttributeControllability[CoachingAttribute.warmth]!,
       ),
     );
   }
@@ -951,9 +1088,24 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.lighting,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
+        confidence:
+            1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability: kAttributeControllability[CoachingAttribute.hue]!,
       ),
     );
   }
+}
+
+class TierCandidates {
+  const TierCandidates({
+    required this.poseAndFace,
+    required this.composition,
+    required this.lighting,
+  });
+
+  final List<ActionPlan> poseAndFace;
+  final List<ActionPlan> composition;
+  final List<ActionPlan> lighting;
 }
 
 class _AttributeEvaluation {
@@ -965,6 +1117,5 @@ class _AttributeEvaluation {
   final bool deviationExceedsThreshold;
   final CoachingDecision decision;
 
-  int get severity => (decision.normalizedSeverity * 10).round();
   String get phrase => decision.fallbackPhrase;
 }

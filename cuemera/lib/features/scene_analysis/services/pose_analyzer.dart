@@ -4,19 +4,91 @@ import 'dart:math';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 import '../../../core/pose/landmark_gate.dart';
+import '../../../core/tracking/temporal_stabilizer.dart';
 import '../domain/models/subject_profile.dart';
 
 class PoseAnalyzer {
-  PoseAnalyzer({Duration holdWindow = Duration.zero})
-    : _hold = GateHold(window: holdWindow);
+  PoseAnalyzer({StabilizerConfig? stabilizerConfig})
+    : _config = stabilizerConfig ?? const StabilizerConfig();
 
   static const double _maxExtremityExtrapolationMultiplier = 4.0;
 
-  final GateHold _hold;
+  final StabilizerConfig _config;
 
-  SubjectProfile analyzePose(dynamic mlkitPoseResult, SubjectProfile previous) {
+  late final TemporalStabilizer _bodyRatioStabilizer = TemporalStabilizer(
+    _config,
+  );
+  late final CircularStabilizer _shoulderAngleStabilizer = CircularStabilizer(
+    _config,
+  );
+  late final TemporalStabilizer _shoulderBalanceStabilizer = TemporalStabilizer(
+    _config,
+  );
+  late final TemporalStabilizer _shoulderSpanStabilizer = TemporalStabilizer(
+    _config,
+  );
+  late final CircularStabilizer _bodyYawStabilizer = CircularStabilizer(
+    _config,
+  );
+
+  /// Genuinely-lost detection: temporal_stabilizer.dart returns
+  /// temporalConfidence 0 exactly when raw was null AND the hold-on-loss
+  /// window has fully elapsed — everything else (a real value, or a raw
+  /// null still within the hold window) should surface a value.
+  double? _resolveLinear(
+    TemporalStabilizer stabilizer,
+    double? raw,
+    DateTime now,
+  ) {
+    final metric = stabilizer.update(raw, now);
+    if (raw == null && metric.temporalConfidence == 0) return null;
+    return metric.value;
+  }
+
+  double? _resolveCircular(
+    CircularStabilizer stabilizer,
+    double? raw,
+    DateTime now,
+  ) {
+    final metric = stabilizer.update(raw, now);
+    if (raw == null && metric.temporalConfidence == 0) return null;
+    return metric.value;
+  }
+
+  double _minConfidence(PoseLandmarkGate gate, List<PoseLandmarkType> types) {
+    var lowest = 1.0;
+    for (final type in types) {
+      final value = gate.trust(type)?.confidence.value ?? 0.0;
+      if (value < lowest) lowest = value;
+    }
+    return lowest;
+  }
+
+  SubjectProfile analyzePose(
+    dynamic mlkitPoseResult,
+    SubjectProfile previous, {
+    DateTime? now,
+  }) {
+    final at = now ?? DateTime.now();
     final poses = mlkitPoseResult as List<Pose>?;
-    if (poses == null || poses.isEmpty) return previous;
+
+    if (poses == null || poses.isEmpty) {
+      return previous.copyWith(
+        bodyRatio: _resolveLinear(_bodyRatioStabilizer, null, at),
+        shoulderAngleDegrees: _resolveCircular(
+          _shoulderAngleStabilizer,
+          null,
+          at,
+        ),
+        shoulderBalanceRatio: _resolveLinear(
+          _shoulderBalanceStabilizer,
+          null,
+          at,
+        ),
+        shoulderSpanRatio: _resolveLinear(_shoulderSpanStabilizer, null, at),
+        bodyYawEstimate: _resolveCircular(_bodyYawStabilizer, null, at),
+      );
+    }
 
     final gate = PoseLandmarkGate.fromLandmarks(
       landmarks: poses.first.landmarks,
@@ -24,6 +96,8 @@ class PoseAnalyzer {
 
     double? shoulderAngle;
     double? torsoScale;
+    double? shoulderBalanceRatio;
+    double? bodyYawEstimate;
     final leftShoulder = gate.landmark(PoseLandmarkType.leftShoulder);
     final rightShoulder = gate.landmark(PoseLandmarkType.rightShoulder);
     if (leftShoulder != null && rightShoulder != null) {
@@ -31,11 +105,36 @@ class PoseAnalyzer {
       final dx = rightShoulder.x - leftShoulder.x;
       shoulderAngle = atan2(dy, dx) * 180 / pi;
       torsoScale = sqrt(dx * dx + dy * dy);
+
+      // Previously missing entirely on the live path — mirrors
+      // ReferenceImageAnalyzer._derivePose()'s formulas so the live and
+      // reference-photo sides compute these identically.
+      shoulderBalanceRatio = torsoScale > 0
+          ? (leftShoulder.y - rightShoulder.y) / torsoScale
+          : null;
+      bodyYawEstimate = atan2(rightShoulder.z - leftShoulder.z, dx) * 180 / pi;
+    }
+
+    final leftHip = gate.landmark(PoseLandmarkType.leftHip);
+    final rightHip = gate.landmark(PoseLandmarkType.rightHip);
+    double? shoulderSpanRatio;
+    if (leftShoulder != null &&
+        rightShoulder != null &&
+        leftHip != null &&
+        rightHip != null &&
+        torsoScale != null) {
+      final shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
+      final shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
+      final hipMidX = (leftHip.x + rightHip.x) / 2;
+      final hipMidY = (leftHip.y + rightHip.y) / 2;
+      final torsoHeight = sqrt(
+        pow(hipMidX - shoulderMidX, 2) + pow(hipMidY - shoulderMidY, 2),
+      );
+      shoulderSpanRatio = torsoHeight > 0 ? torsoScale / torsoHeight : null;
     }
 
     double? bodyRatio;
     final nose = gate.landmark(PoseLandmarkType.nose);
-    final leftHip = gate.landmark(PoseLandmarkType.leftHip);
     final leftAnkle = gate.landmark(PoseLandmarkType.leftAnkle);
     if (nose != null && leftHip != null && leftAnkle != null) {
       final upperLength = (leftHip.y - nose.y).abs();
@@ -50,12 +149,60 @@ class PoseAnalyzer {
       }
     }
 
+    final metricConfidence = <String, double>{
+      if (shoulderAngle != null)
+        'shoulderAngleDegrees': _minConfidence(gate, [
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+        ]),
+      if (shoulderBalanceRatio != null)
+        'shoulderBalanceRatio': _minConfidence(gate, [
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+        ]),
+      if (bodyYawEstimate != null)
+        'bodyYawEstimate': _minConfidence(gate, [
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+        ]),
+      if (shoulderSpanRatio != null)
+        'shoulderSpanRatio': _minConfidence(gate, [
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.rightShoulder,
+          PoseLandmarkType.leftHip,
+          PoseLandmarkType.rightHip,
+        ]),
+      if (bodyRatio != null)
+        'bodyRatio': _minConfidence(gate, [
+          PoseLandmarkType.nose,
+          PoseLandmarkType.leftHip,
+          PoseLandmarkType.leftAnkle,
+        ]),
+    };
+
     return previous.copyWith(
-      bodyRatio: _hold.resolve('bodyRatio', bodyRatio),
-      shoulderAngleDegrees: _hold.resolve(
-        'shoulderAngleDegrees',
+      bodyRatio: _resolveLinear(_bodyRatioStabilizer, bodyRatio, at),
+      shoulderAngleDegrees: _resolveCircular(
+        _shoulderAngleStabilizer,
         shoulderAngle,
+        at,
       ),
+      shoulderBalanceRatio: _resolveLinear(
+        _shoulderBalanceStabilizer,
+        shoulderBalanceRatio,
+        at,
+      ),
+      shoulderSpanRatio: _resolveLinear(
+        _shoulderSpanStabilizer,
+        shoulderSpanRatio,
+        at,
+      ),
+      bodyYawEstimate: _resolveCircular(
+        _bodyYawStabilizer,
+        bodyYawEstimate,
+        at,
+      ),
+      metricConfidence: metricConfidence.isEmpty ? null : metricConfidence,
     );
   }
 }

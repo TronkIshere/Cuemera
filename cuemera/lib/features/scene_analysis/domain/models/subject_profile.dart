@@ -13,6 +13,7 @@ class SubjectProfile {
     this.bodyYawEstimate,
     this.eyesOpen,
     this.expression,
+    this.metricConfidence,
     required this.timestamp,
   });
 
@@ -34,6 +35,10 @@ class SubjectProfile {
   final String? expression;
   final DateTime timestamp;
 
+  final Map<String, double>? metricConfidence;
+
+  double confidenceFor(String metric) => metricConfidence?[metric] ?? 1.0;
+
   static const Object _unset = Object();
 
   SubjectProfile copyWith({
@@ -49,6 +54,7 @@ class SubjectProfile {
     Object? bodyYawEstimate = _unset,
     Object? eyesOpen = _unset,
     Object? expression = _unset,
+    Object? metricConfidence = _unset,
   }) {
     return SubjectProfile(
       bodyRatio: identical(bodyRatio, _unset)
@@ -85,6 +91,9 @@ class SubjectProfile {
       expression: identical(expression, _unset)
           ? this.expression
           : expression as String?,
+      metricConfidence: identical(metricConfidence, _unset)
+          ? this.metricConfidence
+          : metricConfidence as Map<String, double>?,
       timestamp: DateTime.now(),
     );
   }

@@ -5,11 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_tts_service.dart';
+import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/sherpa_tts_service.dart' show TtsEmphasis;
 import '../../reference_photo/providers/reference_providers.dart';
 import '../../scene_analysis/providers/scene_providers.dart';
 import '../../settings/providers/ai_coaching_providers.dart';
-import '../domain/priority_engine.dart';
+import '../domain/action_plan.dart';
 import '../domain/reference_comparison_engine.dart';
 import 'coaching_phrase_model_providers.dart';
 
@@ -92,7 +93,19 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
       generated = await phraseModel
           .generate(action.decision)
           .timeout(_generationTimeout);
-    } catch (_) {
+    } on TimeoutException catch (e, st) {
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'voice_providers: generation timeout',
+      );
+      generated = null;
+    } catch (e, st) {
+      ErrorReportingService.instance.report(
+        e,
+        st,
+        context: 'voice_providers: generation failure',
+      );
       generated = null;
     }
     stopwatch.stop();

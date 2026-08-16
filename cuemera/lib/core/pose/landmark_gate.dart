@@ -4,6 +4,8 @@ import 'dart:ui' show Offset;
 
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
+import 'landmark_trust_model.dart';
+
 const double kMinLandmarkLikelihood = 0.6;
 
 /// Plain (x, y, z, likelihood) tuple, independent of ML Kit's [PoseLandmark]
@@ -370,6 +372,8 @@ class PoseLandmarkGate {
   final double? bodyUnit;
   final Map<PoseLandmarkType, RawLandmark> confidentLandmarks;
   final MaskTrustSignal maskSignal;
+  final Map<int, RawLandmark> _allRawByIndex;
+  final double _likelihoodFloor;
 
   const PoseLandmarkGate._({
     required this.confidentPoints,
@@ -377,7 +381,10 @@ class PoseLandmarkGate {
     required this.bodyUnit,
     required this.confidentLandmarks,
     required this.maskSignal,
-  });
+    Map<int, RawLandmark> allRawByIndex = const {},
+    double likelihoodFloor = kMinLandmarkLikelihood,
+  }) : _allRawByIndex = allRawByIndex,
+       _likelihoodFloor = likelihoodFloor;
 
   factory PoseLandmarkGate.fromLandmarks({
     required Map<PoseLandmarkType, PoseLandmark> landmarks,
@@ -404,8 +411,11 @@ class PoseLandmarkGate {
   }) {
     final points = <Offset?>[];
     final confident = <PoseLandmarkType, RawLandmark>{};
-    for (final type in kGatedLandmarkOrder) {
+    final allRawByIndex = <int, RawLandmark>{};
+    for (var i = 0; i < kGatedLandmarkOrder.length; i++) {
+      final type = kGatedLandmarkOrder[i];
       final landmark = landmarks[type];
+      if (landmark != null) allRawByIndex[i] = landmark;
       final usable =
           landmark != null &&
           landmark.likelihood >= minLikelihood &&
@@ -414,7 +424,13 @@ class PoseLandmarkGate {
       points.add(usable ? Offset(landmark.x, landmark.y) : null);
       if (usable) confident[type] = landmark!;
     }
-    return PoseLandmarkGate._build(points, confident, maskSignal);
+    return PoseLandmarkGate._build(
+      points,
+      confident,
+      maskSignal,
+      allRawByIndex: allRawByIndex,
+      likelihoodFloor: minLikelihood,
+    );
   }
 
   factory PoseLandmarkGate.fromPoints(
@@ -443,8 +459,10 @@ class PoseLandmarkGate {
   static PoseLandmarkGate _build(
     List<Offset?> points,
     Map<PoseLandmarkType, RawLandmark> confident,
-    MaskTrustSignal maskSignal,
-  ) {
+    MaskTrustSignal maskSignal, {
+    Map<int, RawLandmark> allRawByIndex = const {},
+    double likelihoodFloor = kMinLandmarkLikelihood,
+  }) {
     final suspect = <int>{...findSuspectLandmarks(points)};
     if (!maskSignal.bypassed) suspect.addAll(maskSignal.failedIndices);
     return PoseLandmarkGate._(
@@ -453,6 +471,8 @@ class PoseLandmarkGate {
       bodyUnit: poseBodyUnit(points),
       confidentLandmarks: confident,
       maskSignal: maskSignal,
+      allRawByIndex: allRawByIndex,
+      likelihoodFloor: likelihoodFloor,
     );
   }
 
@@ -473,6 +493,30 @@ class PoseLandmarkGate {
 
   bool allTrusted(Iterable<PoseLandmarkType> types) =>
       types.every(isTrustedType);
+
+  /// Continuous, graded trust for a gated landmark by index — additive to
+  /// the binary [isTrusted]/[suspectIndices] above, per the audit's §20
+  /// conservative-wiring plan: existing accessors are unchanged, this is a
+  /// new one built from the same underlying signals. Returns null only
+  /// when this landmark was never detected at all (absent from the raw
+  /// pose result) — everything else, including below-likelihood-floor
+  /// landmarks, gets a real [TrustedLandmark] with a low/zero confidence
+  /// rather than being silently dropped.
+  TrustedLandmark? trustAt(int index) {
+    final raw = _allRawByIndex[index];
+    if (raw == null) return null;
+    return TrustedLandmark.classify(
+      x: raw.x,
+      y: raw.y,
+      z: raw.z,
+      likelihood: raw.likelihood,
+      likelihoodFloor: _likelihoodFloor,
+      maskConfidence: maskSignal.bypassed ? null : maskSignal.confidence[index],
+      geometrySuspect: suspectIndices.contains(index),
+    );
+  }
+
+  TrustedLandmark? trust(PoseLandmarkType type) => trustAt(indexOf(type));
 
   List<Offset?> get trustedPoints => List<Offset?>.generate(
     confidentPoints.length,

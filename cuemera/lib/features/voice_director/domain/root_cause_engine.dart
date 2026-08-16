@@ -107,6 +107,8 @@ class RootCauseEngine {
       tier: representative.decision.tier,
       normalizedSeverity: maxSeverity,
       fallbackPhrase: representative.decision.fallbackPhrase,
+      confidence: combinedConfidence,
+      controllability: representative.controllability,
       targetExpression: representative.decision.targetExpression,
     );
 
