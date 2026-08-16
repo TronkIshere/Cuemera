@@ -35,24 +35,24 @@ class PoseAnalyzer {
   /// temporalConfidence 0 exactly when raw was null AND the hold-on-loss
   /// window has fully elapsed — everything else (a real value, or a raw
   /// null still within the hold window) should surface a value.
-  double? _resolveLinear(
+  StabilizedMetric? _resolveLinear(
     TemporalStabilizer stabilizer,
     double? raw,
     DateTime now,
   ) {
     final metric = stabilizer.update(raw, now);
     if (raw == null && metric.temporalConfidence == 0) return null;
-    return metric.value;
+    return metric;
   }
 
-  double? _resolveCircular(
+  StabilizedMetric? _resolveCircular(
     CircularStabilizer stabilizer,
     double? raw,
     DateTime now,
   ) {
     final metric = stabilizer.update(raw, now);
     if (raw == null && metric.temporalConfidence == 0) return null;
-    return metric.value;
+    return metric;
   }
 
   double _minConfidence(PoseLandmarkGate gate, List<PoseLandmarkType> types) {
@@ -73,25 +73,43 @@ class PoseAnalyzer {
     final poses = mlkitPoseResult as List<Pose>?;
 
     if (poses == null || poses.isEmpty) {
+      final bodyRatioMetric = _resolveLinear(_bodyRatioStabilizer, null, at);
+      final shoulderAngleMetric = _resolveCircular(
+        _shoulderAngleStabilizer,
+        null,
+        at,
+      );
+      final shoulderBalanceMetric = _resolveLinear(
+        _shoulderBalanceStabilizer,
+        null,
+        at,
+      );
+      final shoulderSpanMetric = _resolveLinear(
+        _shoulderSpanStabilizer,
+        null,
+        at,
+      );
+      final bodyYawMetric = _resolveCircular(_bodyYawStabilizer, null, at);
+
       return previous.copyWith(
-        bodyRatio: _resolveLinear(_bodyRatioStabilizer, null, at),
-        shoulderAngleDegrees: _resolveCircular(
-          _shoulderAngleStabilizer,
-          null,
-          at,
-        ),
-        shoulderBalanceRatio: _resolveLinear(
-          _shoulderBalanceStabilizer,
-          null,
-          at,
-        ),
-        shoulderSpanRatio: _resolveLinear(_shoulderSpanStabilizer, null, at),
-        bodyYawEstimate: _resolveCircular(_bodyYawStabilizer, null, at),
+        bodyRatio: bodyRatioMetric?.value,
+        shoulderAngleDegrees: shoulderAngleMetric?.value,
+        shoulderBalanceRatio: shoulderBalanceMetric?.value,
+        shoulderSpanRatio: shoulderSpanMetric?.value,
+        bodyYawEstimate: bodyYawMetric?.value,
+        metricTemporalEligibility: {
+          'bodyRatio': bodyRatioMetric?.isEligible ?? false,
+          'shoulderAngleDegrees': shoulderAngleMetric?.isEligible ?? false,
+          'shoulderBalanceRatio': shoulderBalanceMetric?.isEligible ?? false,
+          'shoulderSpanRatio': shoulderSpanMetric?.isEligible ?? false,
+          'bodyYawEstimate': bodyYawMetric?.isEligible ?? false,
+        },
       );
     }
 
     final gate = PoseLandmarkGate.fromLandmarks(
       landmarks: poses.first.landmarks,
+      maskSignal: MaskTrustSignal.none,
     );
 
     double? shoulderAngle;
@@ -180,29 +198,42 @@ class PoseAnalyzer {
         ]),
     };
 
+    final bodyRatioMetric = _resolveLinear(_bodyRatioStabilizer, bodyRatio, at);
+    final shoulderAngleMetric = _resolveCircular(
+      _shoulderAngleStabilizer,
+      shoulderAngle,
+      at,
+    );
+    final shoulderBalanceMetric = _resolveLinear(
+      _shoulderBalanceStabilizer,
+      shoulderBalanceRatio,
+      at,
+    );
+    final shoulderSpanMetric = _resolveLinear(
+      _shoulderSpanStabilizer,
+      shoulderSpanRatio,
+      at,
+    );
+    final bodyYawMetric = _resolveCircular(
+      _bodyYawStabilizer,
+      bodyYawEstimate,
+      at,
+    );
+
     return previous.copyWith(
-      bodyRatio: _resolveLinear(_bodyRatioStabilizer, bodyRatio, at),
-      shoulderAngleDegrees: _resolveCircular(
-        _shoulderAngleStabilizer,
-        shoulderAngle,
-        at,
-      ),
-      shoulderBalanceRatio: _resolveLinear(
-        _shoulderBalanceStabilizer,
-        shoulderBalanceRatio,
-        at,
-      ),
-      shoulderSpanRatio: _resolveLinear(
-        _shoulderSpanStabilizer,
-        shoulderSpanRatio,
-        at,
-      ),
-      bodyYawEstimate: _resolveCircular(
-        _bodyYawStabilizer,
-        bodyYawEstimate,
-        at,
-      ),
+      bodyRatio: bodyRatioMetric?.value,
+      shoulderAngleDegrees: shoulderAngleMetric?.value,
+      shoulderBalanceRatio: shoulderBalanceMetric?.value,
+      shoulderSpanRatio: shoulderSpanMetric?.value,
+      bodyYawEstimate: bodyYawMetric?.value,
       metricConfidence: metricConfidence.isEmpty ? null : metricConfidence,
+      metricTemporalEligibility: {
+        'bodyRatio': bodyRatioMetric?.isEligible ?? false,
+        'shoulderAngleDegrees': shoulderAngleMetric?.isEligible ?? false,
+        'shoulderBalanceRatio': shoulderBalanceMetric?.isEligible ?? false,
+        'shoulderSpanRatio': shoulderSpanMetric?.isEligible ?? false,
+        'bodyYawEstimate': bodyYawMetric?.isEligible ?? false,
+      },
     );
   }
 }

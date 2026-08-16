@@ -29,8 +29,6 @@ class ModelLifecycleManager {
 
   final LifecycleErrorReporter? onError;
 
-  /// Capped backoff — does not grow unbounded and does not require an app
-  /// restart to clear, unlike the current coachingAiUnavailableProvider.
   final List<Duration> retryBackoff;
 
   ModelLifecycleState _state = ModelLifecycleState.uninitialized;
@@ -42,19 +40,26 @@ class ModelLifecycleManager {
   bool get canAttemptGeneration => _state == ModelLifecycleState.ready;
   Object? get lastError => _lastError;
 
-  bool get _inBackoff {
+  bool get isInBackoff {
     if (_state != ModelLifecycleState.error || _lastErrorAt == null)
       return false;
     final index = (_consecutiveFailures - 1).clamp(0, retryBackoff.length - 1);
     return DateTime.now().difference(_lastErrorAt!) < retryBackoff[index];
   }
 
-  Future<void> ensureReady(CoachingPhraseModelService service) async {
+  void resetBackoff() {
+    _lastErrorAt = null;
+  }
+
+  Future<void> ensureReady(
+    CoachingPhraseModelService service, {
+    void Function(int percent)? onProgress,
+  }) async {
     if (_state == ModelLifecycleState.ready) return;
     if (_state == ModelLifecycleState.installing ||
         _state == ModelLifecycleState.loading)
       return;
-    if (_inBackoff) return;
+    if (isInBackoff) return;
 
     if (_state == ModelLifecycleState.error) {
       _state = ModelLifecycleState.recovering;
@@ -63,7 +68,7 @@ class ModelLifecycleManager {
     _state = ModelLifecycleState.initializing;
     try {
       _state = ModelLifecycleState.installing;
-      await service.ensureInstalled();
+      await service.ensureInstalled(onProgress: onProgress);
 
       _state = ModelLifecycleState.loading;
       if (!service.isReady) {
@@ -102,10 +107,6 @@ class ModelLifecycleManager {
       if (result != null) {
         _consecutiveFailures = 0;
       } else {
-        // generate() returning null without throwing (busy, timeout inside
-        // the service, etc.) still counts toward backoff — a silent null
-        // is not evidence-free, it's evidence of *something* going wrong,
-        // even though we don't have a specific exception for it.
         _consecutiveFailures++;
       }
       return result;

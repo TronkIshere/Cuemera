@@ -117,7 +117,15 @@ final sceneAnalysisListenerProvider = Provider.autoDispose<void>((ref) {
       raw = faceAnalyzer.analyzeFace(result.faces, raw);
     }
 
-    final smoothed = trackingEngine.smoothSubject(raw, previous);
+    final poseDetected = result.poses != null && result.poses!.isNotEmpty;
+    final faceDetected = result.faces != null && result.faces!.isNotEmpty;
+
+    final smoothed = trackingEngine
+        .smoothSubject(raw, previous)
+        .copyWith(
+          subjectFullyInFrame: poseDetected,
+          detectorsAgree: poseDetected && faceDetected,
+        );
     ref.read(subjectProfileProvider.notifier).state = smoothed;
   });
 

@@ -18,12 +18,16 @@ import '../../settings/providers/coaching_v2_settings_provider.dart';
 import '../domain/action_plan.dart';
 import '../domain/coaching_state_machine.dart';
 import '../models/coaching_decision.dart';
+import '../services/llm_contract.dart';
+import '../services/llm_output_validator.dart';
 import 'coaching_phrase_model_providers.dart';
 import 'voice_providers.dart'
     show displayedCoachingPhraseProvider, referenceComparisonEngineProvider;
 
+const _llmValidatorV2 = LlmOutputValidator();
+
 const _generationTimeoutV2 = Duration(seconds: 5);
-const _maxConsecutiveFailuresBeforeUnavailableV2 = 3;
+const _minLlmGenerationIntervalV2 = Duration(seconds: 3);
 
 const _attributeSettleWindow = Duration(seconds: 2);
 
@@ -44,7 +48,7 @@ double? currentMeasurementFor(
     case CoachingAttribute.faceRoll:
       return subject.faceAngleZDegrees;
     case CoachingAttribute.faceYaw:
-      return null;
+      return subject.faceAngleDegrees;
     case CoachingAttribute.bodyRatio:
       return subject.bodyRatio;
     case CoachingAttribute.mouthOpen:
@@ -86,7 +90,7 @@ double? referenceMeasurementFor(
     case CoachingAttribute.faceRoll:
       return reference.faceAngleZDegrees;
     case CoachingAttribute.faceYaw:
-      return null;
+      return reference.faceAngleDegrees;
     case CoachingAttribute.bodyRatio:
       return reference.bodyRatio;
     case CoachingAttribute.mouthOpen:
@@ -116,16 +120,37 @@ double? referenceMeasurementFor(
   }
 }
 
+bool attributeTemporallyEligible(
+  CoachingAttribute attribute,
+  SubjectProfile subject,
+) {
+  switch (attribute) {
+    case CoachingAttribute.shoulderAngle:
+      return subject.temporallyEligibleFor('shoulderAngleDegrees');
+    case CoachingAttribute.shoulderBalance:
+      return subject.temporallyEligibleFor('shoulderBalanceRatio');
+    case CoachingAttribute.shoulderSpan:
+      return subject.temporallyEligibleFor('shoulderSpanRatio');
+    case CoachingAttribute.bodyYaw:
+      return subject.temporallyEligibleFor('bodyYawEstimate');
+    case CoachingAttribute.bodyRatio:
+      return subject.temporallyEligibleFor('bodyRatio');
+    default:
+      return true;
+  }
+}
+
 final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
   final ttsService = ref.watch(appTtsServiceProvider);
   final phraseModel = ref.watch(coachingPhraseModelServiceProvider);
+  final lifecycle = ref.watch(modelLifecycleManagerProvider);
   final engine = ref.watch(referenceComparisonEngineProvider);
   final stateMachine = ref.watch(coachingStateMachineProvider);
 
   int tierRotation = 0;
-  int consecutiveFailures = 0;
   int generationEpoch = 0;
   DateTime? instructedAt;
+  DateTime? lastGenerationAttemptAt;
 
   TtsEmphasis emphasisFor(severityBand) {
     try {
@@ -144,29 +169,38 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
 
   Future<void> speakPlan(ActionPlan plan, int epoch) async {
     final emphasis = emphasisFor(plan.decision.severityBand);
-    final aiUnavailable = ref.read(coachingAiUnavailableProvider);
+    final aiUnavailable = ref.read(
+      aiCoachingSettingsProvider.select((s) => s.aiUnavailable),
+    );
     final aiCoachingEnabled = ref.read(
       aiCoachingSettingsProvider.select((s) => s.enabled),
     );
 
     debugPrint(
       'ai_gate(v2): aiUnavailable=$aiUnavailable, enabled=$aiCoachingEnabled, '
-      'modelNull=${phraseModel == null}, isReady=${phraseModel?.isReady}',
+      'modelNull=${phraseModel == null}, lifecycleState=${lifecycle.state.name}',
     );
+
+    final now = DateTime.now();
+    final llmCadenceOk =
+        lastGenerationAttemptAt == null ||
+        now.difference(lastGenerationAttemptAt!) >= _minLlmGenerationIntervalV2;
 
     if (aiUnavailable ||
         !aiCoachingEnabled ||
         phraseModel == null ||
-        !phraseModel.isReady) {
+        !lifecycle.canAttemptGeneration ||
+        !llmCadenceOk) {
       ref.read(displayedCoachingPhraseProvider.notifier).state = plan.phrase;
       ttsService.speak(plan.phrase, emphasis: emphasis);
       return;
     }
+    lastGenerationAttemptAt = now;
 
     String? generated;
     try {
-      generated = await phraseModel
-          .generate(plan.decision)
+      generated = await lifecycle
+          .generate(phraseModel, plan.decision)
           .timeout(_generationTimeoutV2);
     } on TimeoutException catch (e, st) {
       ErrorReportingService.instance.report(
@@ -187,16 +221,30 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
     if (epoch != generationEpoch) return;
 
     if (generated != null) {
-      consecutiveFailures = 0;
-      ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
-      ttsService.speak(generated, emphasis: emphasis);
+      final validation = _llmValidatorV2.validate(
+        generated,
+        LlmCoachingContract.fromDecision(plan.decision),
+      );
+      debugPrint(
+        'ai_gate(v2): generated="$generated" ${validation.debugLine()}',
+      );
+
+      if (validation.passed) {
+        ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
+        ttsService.speak(generated, emphasis: emphasis);
+        return;
+      }
+
+      ErrorReportingService.instance.report(
+        StateError('llm output failed validation: ${validation.failure.name}'),
+        StackTrace.current,
+        context: 'voice_providers_v2: validation failed',
+      );
+      ref.read(displayedCoachingPhraseProvider.notifier).state = plan.phrase;
+      ttsService.speak(plan.phrase, emphasis: emphasis);
       return;
     }
 
-    consecutiveFailures++;
-    if (consecutiveFailures >= _maxConsecutiveFailuresBeforeUnavailableV2) {
-      ref.read(coachingAiUnavailableProvider.notifier).state = true;
-    }
     ref.read(displayedCoachingPhraseProvider.notifier).state = plan.phrase;
     ttsService.speak(plan.phrase, emphasis: emphasis);
   }
@@ -225,10 +273,13 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
           poseAndFace: tiers.poseAndFace,
           composition: tiers.composition,
           lighting: tiers.lighting,
-          contextFor: (_) => const EligibilityContext(
-            subjectFullyInFrame: true,
-            detectorsAgree: true,
-            temporallyEligible: true,
+          contextFor: (candidate) => EligibilityContext(
+            subjectFullyInFrame: subject.subjectFullyInFrame ?? true,
+            detectorsAgree: subject.detectorsAgree ?? true,
+            temporallyEligible: attributeTemporallyEligible(
+              candidate.decision.attribute,
+              subject,
+            ),
           ),
           tierRotation: tierRotation,
         );

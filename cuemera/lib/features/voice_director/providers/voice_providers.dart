@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/confidence/confidence.dart';
 import '../../../core/services/app_tts_service.dart';
 import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/sherpa_tts_service.dart' show TtsEmphasis;
@@ -12,7 +13,11 @@ import '../../scene_analysis/providers/scene_providers.dart';
 import '../../settings/providers/ai_coaching_providers.dart';
 import '../domain/action_plan.dart';
 import '../domain/reference_comparison_engine.dart';
+import '../services/llm_contract.dart';
+import '../services/llm_output_validator.dart';
 import 'coaching_phrase_model_providers.dart';
+
+const _llmValidator = LlmOutputValidator();
 
 final referenceComparisonEngineProvider = Provider<ReferenceComparisonEngine>(
   (ref) => ReferenceComparisonEngine(),
@@ -39,16 +44,19 @@ final nextActionProvider = Provider<PriorityAction?>((ref) {
 final displayedCoachingPhraseProvider = StateProvider<String?>((ref) => null);
 
 const _generationTimeout = Duration(seconds: 5);
-const _maxConsecutiveFailuresBeforeUnavailable = 3;
+const _minLlmGenerationInterval = Duration(seconds: 3);
 
 final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
   final ttsService = ref.watch(appTtsServiceProvider);
   final phraseModel = ref.watch(coachingPhraseModelServiceProvider);
+  final lifecycle = ref.watch(modelLifecycleManagerProvider);
 
   String? lastDedupeKey;
   Timer? debounceTimer;
-  int consecutiveFailures = 0;
+  Timer? pendingRetryTimer;
   int generationEpoch = 0;
+  DateTime? lastGenerationAttemptAt;
+  PriorityAction? pendingAction;
 
   TtsEmphasis emphasisFor(severityBand) {
     try {
@@ -67,31 +75,47 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
 
   Future<void> speakForDecision(PriorityAction action, int epoch) async {
     final emphasis = emphasisFor(action.decision.severityBand);
-    final aiUnavailable = ref.read(coachingAiUnavailableProvider);
+    final aiUnavailable = ref.read(
+      aiCoachingSettingsProvider.select((s) => s.aiUnavailable),
+    );
     final aiCoachingEnabled = ref.read(
       aiCoachingSettingsProvider.select((s) => s.enabled),
     );
 
     debugPrint(
       'ai_gate: aiUnavailable=$aiUnavailable, enabled=$aiCoachingEnabled, '
-      'modelNull=${phraseModel == null}, isReady=${phraseModel?.isReady}',
+      'modelNull=${phraseModel == null}, lifecycleState=${lifecycle.state.name}',
     );
+
+    final now = DateTime.now();
+    final llmCadenceOk =
+        lastGenerationAttemptAt == null ||
+        now.difference(lastGenerationAttemptAt!) >= _minLlmGenerationInterval;
 
     if (aiUnavailable ||
         !aiCoachingEnabled ||
         phraseModel == null ||
-        !phraseModel.isReady) {
-      debugPrint('ai_gate: fallback to rule-based phrase');
+        !lifecycle.canAttemptGeneration ||
+        !llmCadenceOk) {
+      debugPrint(
+        aiUnavailable ||
+                !aiCoachingEnabled ||
+                phraseModel == null ||
+                !lifecycle.canAttemptGeneration
+            ? 'ai_gate: fallback to rule-based phrase'
+            : 'ai_gate: llm cadence floor not met, fallback to rule-based phrase',
+      );
       ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
       ttsService.speak(action.phrase, emphasis: emphasis);
       return;
     }
+    lastGenerationAttemptAt = now;
 
     final stopwatch = Stopwatch()..start();
     String? generated;
     try {
-      generated = await phraseModel
-          .generate(action.decision)
+      generated = await lifecycle
+          .generate(phraseModel, action.decision)
           .timeout(_generationTimeout);
     } on TimeoutException catch (e, st) {
       ErrorReportingService.instance.report(
@@ -121,39 +145,79 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
     if (epoch != generationEpoch) return;
 
     if (generated != null) {
-      debugPrint('ai_gate: generated="$generated"');
-      consecutiveFailures = 0;
-      ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
-      ttsService.speak(generated, emphasis: emphasis);
+      final validation = _llmValidator.validate(
+        generated,
+        LlmCoachingContract.fromDecision(action.decision),
+      );
+      debugPrint('ai_gate: generated="$generated" ${validation.debugLine()}');
+
+      if (validation.passed) {
+        ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
+        ttsService.speak(generated, emphasis: emphasis);
+        return;
+      }
+
+      ErrorReportingService.instance.report(
+        StateError('llm output failed validation: ${validation.failure.name}'),
+        StackTrace.current,
+        context: 'voice_providers: validation failed',
+      );
+      ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
+      ttsService.speak(action.phrase, emphasis: emphasis);
       return;
     }
 
-    consecutiveFailures++;
     debugPrint(
-      'ai_gate: generate() failed, consecutiveFailures=$consecutiveFailures',
+      'ai_gate: generate() failed, lifecycleState=${lifecycle.state.name}',
     );
-    if (consecutiveFailures >= _maxConsecutiveFailuresBeforeUnavailable) {
-      debugPrint('ai_gate: marking AI unavailable');
-      ref.read(coachingAiUnavailableProvider.notifier).state = true;
-    }
     ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
     ttsService.speak(action.phrase, emphasis: emphasis);
+  }
+
+  void trySpeak(PriorityAction action) {
+    if (ttsService.isSpeaking) {
+      pendingAction = action;
+      pendingRetryTimer ??= Timer.periodic(const Duration(milliseconds: 250), (
+        _,
+      ) {
+        final queued = pendingAction;
+        if (queued == null || ttsService.isSpeaking) return;
+        pendingAction = null;
+        pendingRetryTimer?.cancel();
+        pendingRetryTimer = null;
+        lastDedupeKey = queued.decision.dedupeKey;
+        generationEpoch++;
+        speakForDecision(queued, generationEpoch);
+      });
+      return;
+    }
+    lastDedupeKey = action.decision.dedupeKey;
+    generationEpoch++;
+    speakForDecision(action, generationEpoch);
   }
 
   ref.listen<PriorityAction?>(nextActionProvider, (previous, next) {
     if (next == null) return;
     if (next.decision.dedupeKey == lastDedupeKey) return;
+    if (pendingAction?.decision.dedupeKey == next.decision.dedupeKey) return;
+
+    if (next.confidence < ConfidenceFloors.eligibleToSpeak) {
+      debugPrint(
+        'confidence_gate: ${next.decision.attribute.name} confidence='
+        '${next.confidence.toStringAsFixed(2)} below eligibleToSpeak '
+        '(${ConfidenceFloors.eligibleToSpeak}) — not speaking',
+      );
+      return;
+    }
 
     debounceTimer?.cancel();
     debounceTimer = Timer(const Duration(milliseconds: 400), () {
-      if (ttsService.isSpeaking) return;
-      lastDedupeKey = next.decision.dedupeKey;
-      generationEpoch++;
-      speakForDecision(next, generationEpoch);
+      trySpeak(next);
     });
   });
 
   ref.onDispose(() {
     debounceTimer?.cancel();
+    pendingRetryTimer?.cancel();
   });
 });

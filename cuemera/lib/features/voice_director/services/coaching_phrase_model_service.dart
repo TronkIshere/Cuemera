@@ -14,6 +14,8 @@ class CoachingPhraseModelService {
   static const String _defaultModelUrl =
       'https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task';
 
+  static const int _maxPromptCharacters = 1400;
+
   static bool _pluginInitialized = false;
 
   final String modelUrl;
@@ -62,13 +64,22 @@ class CoachingPhraseModelService {
   Future<String?> generate(CoachingDecision decision) async {
     if (!isReady) return null;
     if (_generating) return null;
+
+    final prompt = _buildPrompt(decision);
+    if (prompt.length > _maxPromptCharacters) {
+      ErrorReportingService.instance.report(
+        StateError('prompt exceeds character budget: ${prompt.length}'),
+        StackTrace.current,
+        context: 'coaching_phrase_model_service: prompt too long, skipped',
+      );
+      return null;
+    }
+
     _generating = true;
 
     try {
       final session = await _model!.createSession();
-      await session.addQueryChunk(
-        Message.text(text: _buildPrompt(decision), isUser: true),
-      );
+      await session.addQueryChunk(Message.text(text: prompt, isUser: true));
       final response = await session.getResponse();
       await session.close();
 

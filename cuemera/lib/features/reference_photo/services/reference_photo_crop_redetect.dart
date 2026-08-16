@@ -290,7 +290,10 @@ Future<CropRedetectOutcome> reconcileWithCrop({
     );
   }
 
-  final likelihoodMergedGate = PoseLandmarkGate.fromRawLandmarks(verified);
+  final likelihoodMergedGate = PoseLandmarkGate.fromRawLandmarks(
+    verified,
+    maskSignal: MaskTrustSignal.none,
+  );
   final mergedMaskSignal = sampleMaskTrust(
     points: likelihoodMergedGate.confidentPoints,
     mask: mask,

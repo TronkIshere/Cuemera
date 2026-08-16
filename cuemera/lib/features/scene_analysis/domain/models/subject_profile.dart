@@ -14,6 +14,9 @@ class SubjectProfile {
     this.eyesOpen,
     this.expression,
     this.metricConfidence,
+    this.metricTemporalEligibility,
+    this.subjectFullyInFrame,
+    this.detectorsAgree,
     required this.timestamp,
   });
 
@@ -36,8 +39,14 @@ class SubjectProfile {
   final DateTime timestamp;
 
   final Map<String, double>? metricConfidence;
+  final Map<String, bool>? metricTemporalEligibility;
+  final bool? subjectFullyInFrame;
+  final bool? detectorsAgree;
 
   double confidenceFor(String metric) => metricConfidence?[metric] ?? 1.0;
+
+  bool temporallyEligibleFor(String metric) =>
+      metricTemporalEligibility?[metric] ?? true;
 
   static const Object _unset = Object();
 
@@ -55,6 +64,9 @@ class SubjectProfile {
     Object? eyesOpen = _unset,
     Object? expression = _unset,
     Object? metricConfidence = _unset,
+    Object? metricTemporalEligibility = _unset,
+    Object? subjectFullyInFrame = _unset,
+    Object? detectorsAgree = _unset,
   }) {
     return SubjectProfile(
       bodyRatio: identical(bodyRatio, _unset)
@@ -94,6 +106,15 @@ class SubjectProfile {
       metricConfidence: identical(metricConfidence, _unset)
           ? this.metricConfidence
           : metricConfidence as Map<String, double>?,
+      metricTemporalEligibility: identical(metricTemporalEligibility, _unset)
+          ? this.metricTemporalEligibility
+          : metricTemporalEligibility as Map<String, bool>?,
+      subjectFullyInFrame: identical(subjectFullyInFrame, _unset)
+          ? this.subjectFullyInFrame
+          : subjectFullyInFrame as bool?,
+      detectorsAgree: identical(detectorsAgree, _unset)
+          ? this.detectorsAgree
+          : detectorsAgree as bool?,
       timestamp: DateTime.now(),
     );
   }

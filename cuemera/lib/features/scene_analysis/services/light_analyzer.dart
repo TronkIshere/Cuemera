@@ -97,11 +97,6 @@ class LightAnalyzer {
   }
 
   double _estimateSymmetry(_MaskStats? maskStats, SubjectProfile? subject) {
-    final shoulderAngle = subject?.shoulderAngleDegrees;
-    if (shoulderAngle != null) {
-      return (1.0 - (shoulderAngle.abs() / 45.0)).clamp(0.0, 1.0);
-    }
-
     if (maskStats == null) return 0.5;
 
     final left = maskStats.leftSubjectPixels;

@@ -389,7 +389,7 @@ class PoseLandmarkGate {
   factory PoseLandmarkGate.fromLandmarks({
     required Map<PoseLandmarkType, PoseLandmark> landmarks,
     double minLikelihood = kMinLandmarkLikelihood,
-    MaskTrustSignal maskSignal = MaskTrustSignal.none,
+    required MaskTrustSignal maskSignal,
   }) {
     return PoseLandmarkGate.fromRawLandmarks(
       {
@@ -407,7 +407,7 @@ class PoseLandmarkGate {
   factory PoseLandmarkGate.fromRawLandmarks(
     Map<PoseLandmarkType, RawLandmark> landmarks, {
     double minLikelihood = kMinLandmarkLikelihood,
-    MaskTrustSignal maskSignal = MaskTrustSignal.none,
+    required MaskTrustSignal maskSignal,
   }) {
     final points = <Offset?>[];
     final confident = <PoseLandmarkType, RawLandmark>{};
@@ -435,7 +435,7 @@ class PoseLandmarkGate {
 
   factory PoseLandmarkGate.fromPoints(
     List<Offset?> points, {
-    MaskTrustSignal maskSignal = MaskTrustSignal.none,
+    required MaskTrustSignal maskSignal,
   }) {
     final normalized = List<Offset?>.generate(
       kGatedLandmarkOrder.length,

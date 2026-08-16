@@ -17,15 +17,16 @@ class ReferenceComparisonEngine {
   static const double _moderateSeverityCeiling =
       CoachingDecision.moderateSeverityCeiling;
   static const bool _faceRollDirectionIsMirrored = false;
+  static const bool _faceYawDirectionIsMirrored = false;
   static const bool _shoulderBalanceDirectionIsMirrored = false;
   static const bool _bodyYawDirectionIsMirrored = false;
 
   String _tieredPhrase(
-    double normalizedSeverity, {
-    required String mild,
-    required String moderate,
-    required String strong,
-  }) {
+      double normalizedSeverity, {
+        required String mild,
+        required String moderate,
+        required String strong,
+      }) {
     if (normalizedSeverity < _mildSeverityCeiling) return mild;
     if (normalizedSeverity < _moderateSeverityCeiling) return moderate;
     return strong;
@@ -60,9 +61,9 @@ class ReferenceComparisonEngine {
     final lightingTier = <_AttributeEvaluation>[];
 
     void addIfPresent(
-      List<_AttributeEvaluation> tier,
-      _AttributeEvaluation? evaluation,
-    ) {
+        List<_AttributeEvaluation> tier,
+        _AttributeEvaluation? evaluation,
+        ) {
       if (evaluation != null) tier.add(evaluation);
     }
 
@@ -77,6 +78,10 @@ class ReferenceComparisonEngine {
     addIfPresent(
       poseAndFaceTier,
       _evaluateFaceRoll(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      _evaluateFaceYaw(subject, reference, tolerance),
     );
     addIfPresent(
       poseAndFaceTier,
@@ -144,8 +149,8 @@ class ReferenceComparisonEngine {
 
     debugPrint(
       'pick_worst: pose=[${poseCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}] '
-      'composition=[${compositionCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}] '
-      'lighting=[${lightingCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}]',
+          'composition=[${compositionCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}] '
+          'lighting=[${lightingCandidates.map((c) => '${c.decision.attribute.name}=${c.severity.toStringAsFixed(3)}').join(', ')}]',
     );
 
     return TierCandidates(
@@ -179,10 +184,10 @@ class ReferenceComparisonEngine {
   }
 
   _AttributeEvaluation? _evaluateShoulderAngle(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.shoulderAngleDegrees;
     final referenceValue = reference.shoulderAngleDegrees;
     if (subjectValue == null || referenceValue == null) return null;
@@ -208,19 +213,19 @@ class ReferenceComparisonEngine {
 
     final phrase = isSubjectGreater
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Square your shoulders just a touch',
-            moderate: 'Square your shoulders more',
-            strong:
-                "Really square up your shoulders — they're tilted well off the reference",
-          )
+      normalizedSeverity,
+      mild: 'Square your shoulders just a touch',
+      moderate: 'Square your shoulders more',
+      strong:
+      "Really square up your shoulders — they're tilted well off the reference",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Angle your shoulders slightly, like the reference',
-            moderate: 'Angle your shoulders more, like the reference',
-            strong:
-                "Angle your shoulders a lot more — match the reference's tilt",
-          );
+      normalizedSeverity,
+      mild: 'Angle your shoulders slightly, like the reference',
+      moderate: 'Angle your shoulders more, like the reference',
+      strong:
+      "Angle your shoulders a lot more — match the reference's tilt",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -237,16 +242,16 @@ class ReferenceComparisonEngine {
           Confidence(reference.confidenceFor('shoulderAngleDegrees')),
         ).value,
         controllability:
-            kAttributeControllability[CoachingAttribute.shoulderAngle]!,
+        kAttributeControllability[CoachingAttribute.shoulderAngle]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateFacePitch(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.faceAngleXDegrees;
     final referenceValue = reference.faceAngleXDegrees;
     if (subjectValue == null || referenceValue == null) return null;
@@ -272,19 +277,19 @@ class ReferenceComparisonEngine {
 
     final phrase = isSubjectGreater
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Tilt your chin down just a touch',
-            moderate: 'Tilt your head down',
-            strong:
-                "Tilt your head down a lot more — you're well above the reference angle",
-          )
+      normalizedSeverity,
+      mild: 'Tilt your chin down just a touch',
+      moderate: 'Tilt your head down',
+      strong:
+      "Tilt your head down a lot more — you're well above the reference angle",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Lift your chin slightly',
-            moderate: 'Tilt your head up',
-            strong:
-                "Tilt your head up a lot more — you're well below the reference angle",
-          );
+      normalizedSeverity,
+      mild: 'Lift your chin slightly',
+      moderate: 'Tilt your head up',
+      strong:
+      "Tilt your head up a lot more — you're well below the reference angle",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -297,18 +302,18 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability:
-            kAttributeControllability[CoachingAttribute.facePitch]!,
+        kAttributeControllability[CoachingAttribute.facePitch]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateFaceRoll(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.faceAngleZDegrees;
     final referenceValue = reference.faceAngleZDegrees;
     if (subjectValue == null || referenceValue == null) return null;
@@ -337,19 +342,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectTiltedMoreTowardRight
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Straighten your head just a touch',
-            moderate: "Straighten your head — it's tilted to the right",
-            strong:
-                "Straighten your head — it's tilted well to the right compared to the reference",
-          )
+      normalizedSeverity,
+      mild: 'Straighten your head just a touch',
+      moderate: "Straighten your head — it's tilted to the right",
+      strong:
+      "Straighten your head — it's tilted well to the right compared to the reference",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Straighten your head just a touch',
-            moderate: "Straighten your head — it's tilted to the left",
-            strong:
-                "Straighten your head — it's tilted well to the left compared to the reference",
-          );
+      normalizedSeverity,
+      mild: 'Straighten your head just a touch',
+      moderate: "Straighten your head — it's tilted to the left",
+      strong:
+      "Straighten your head — it's tilted well to the left compared to the reference",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -362,17 +367,81 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability: kAttributeControllability[CoachingAttribute.faceRoll]!,
       ),
     );
   }
 
+  _AttributeEvaluation? _evaluateFaceYaw(
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
+    final subjectValue = subject.faceAngleDegrees;
+    final referenceValue = reference.faceAngleDegrees;
+    if (subjectValue == null || referenceValue == null) return null;
+
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
+    final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+    final normalizedSeverity = ComparisonMath.normalizedSeverity(
+      deviation,
+      ComparisonMath.maxDeviationForPose,
+    );
+    final thresholdForPose = ComparisonMath.thresholdForPose(
+      tolerance.poseTolerance,
+    );
+    final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+      deviation,
+      thresholdForPose,
+    );
+
+    final subjectTurnedMoreTowardRight = _faceYawDirectionIsMirrored
+        ? signedDiff < 0
+        : signedDiff > 0;
+
+    final phrase = subjectTurnedMoreTowardRight
+        ? _tieredPhrase(
+      normalizedSeverity,
+      mild: 'Turn your face slightly to your left',
+      moderate: 'Turn your face more to your left, like the reference',
+      strong:
+      "Turn your face a lot more to your left — you're turned well past the reference",
+    )
+        : _tieredPhrase(
+      normalizedSeverity,
+      mild: 'Turn your face slightly to your right',
+      moderate: 'Turn your face more to your right, like the reference',
+      strong:
+      "Turn your face a lot more to your right — you're turned well past the reference",
+    );
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: deviationExceedsThreshold,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.faceYaw,
+        direction: subjectTurnedMoreTowardRight
+            ? CoachingDirection.left
+            : CoachingDirection.right,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: normalizedSeverity,
+        fallbackPhrase: phrase,
+        confidence:
+        1.0, // no landmark-confidence signal wired for this attribute yet
+        controllability: kAttributeControllability[CoachingAttribute.faceYaw]!,
+      ),
+    );
+  }
+
   _AttributeEvaluation? _evaluateShoulderBalance(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.shoulderBalanceRatio;
     final referenceValue = reference.shoulderBalanceRatio;
     if (subjectValue == null || referenceValue == null) return null;
@@ -396,19 +465,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectLeftLowerThanReference
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Level your shoulders just a touch',
-            moderate: 'Lift your left shoulder slightly, like the reference',
-            strong:
-                "Your left shoulder is a lot lower than the reference — lift it",
-          )
+      normalizedSeverity,
+      mild: 'Level your shoulders just a touch',
+      moderate: 'Lift your left shoulder slightly, like the reference',
+      strong:
+      "Your left shoulder is a lot lower than the reference — lift it",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Level your shoulders just a touch',
-            moderate: 'Lift your right shoulder slightly, like the reference',
-            strong:
-                "Your right shoulder is a lot lower than the reference — lift it",
-          );
+      normalizedSeverity,
+      mild: 'Level your shoulders just a touch',
+      moderate: 'Lift your right shoulder slightly, like the reference',
+      strong:
+      "Your right shoulder is a lot lower than the reference — lift it",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -425,16 +494,16 @@ class ReferenceComparisonEngine {
           Confidence(reference.confidenceFor('shoulderBalanceRatio')),
         ).value,
         controllability:
-            kAttributeControllability[CoachingAttribute.shoulderBalance]!,
+        kAttributeControllability[CoachingAttribute.shoulderBalance]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateShoulderSpan(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.shoulderSpanRatio;
     final referenceValue = reference.shoulderSpanRatio;
     if (subjectValue == null || referenceValue == null) return null;
@@ -460,19 +529,19 @@ class ReferenceComparisonEngine {
     final subjectBroaderThanReference = subjectValue > referenceValue;
     final phrase = subjectBroaderThanReference
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Relax your shoulders just a touch',
-            moderate: 'Relax your shoulders, like the reference',
-            strong:
-                "Your shoulders are a lot broader than the reference — relax them in",
-          )
+      normalizedSeverity,
+      mild: 'Relax your shoulders just a touch',
+      moderate: 'Relax your shoulders, like the reference',
+      strong:
+      "Your shoulders are a lot broader than the reference — relax them in",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Open your shoulders slightly',
-            moderate: 'Open your shoulders more, like the reference',
-            strong:
-                "Your shoulders are a lot narrower than the reference — open them up",
-          );
+      normalizedSeverity,
+      mild: 'Open your shoulders slightly',
+      moderate: 'Open your shoulders more, like the reference',
+      strong:
+      "Your shoulders are a lot narrower than the reference — open them up",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -489,16 +558,16 @@ class ReferenceComparisonEngine {
           Confidence(reference.confidenceFor('shoulderSpanRatio')),
         ).value,
         controllability:
-            kAttributeControllability[CoachingAttribute.shoulderSpan]!,
+        kAttributeControllability[CoachingAttribute.shoulderSpan]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateBodyYaw(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.bodyYawEstimate;
     final referenceValue = reference.bodyYawEstimate;
     if (subjectValue == null || referenceValue == null) return null;
@@ -527,19 +596,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectTurnedMoreTowardRight
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Turn your body slightly to your left',
-            moderate: 'Turn your body more to your left, like the reference',
-            strong:
-                "Turn your body a lot more to your left — your torso is angled well past the reference",
-          )
+      normalizedSeverity,
+      mild: 'Turn your body slightly to your left',
+      moderate: 'Turn your body more to your left, like the reference',
+      strong:
+      "Turn your body a lot more to your left — your torso is angled well past the reference",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Turn your body slightly to your right',
-            moderate: 'Turn your body more to your right, like the reference',
-            strong:
-                "Turn your body a lot more to your right — your torso is angled well past the reference",
-          );
+      normalizedSeverity,
+      mild: 'Turn your body slightly to your right',
+      moderate: 'Turn your body more to your right, like the reference',
+      strong:
+      "Turn your body a lot more to your right — your torso is angled well past the reference",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -561,10 +630,10 @@ class ReferenceComparisonEngine {
   }
 
   _AttributeEvaluation? _evaluateBodyRatio(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.bodyRatio;
     final referenceValue = reference.bodyRatio;
     if (subjectValue == null || referenceValue == null) return null;
@@ -592,7 +661,7 @@ class ReferenceComparisonEngine {
       mild: "Your framing's a touch different from the reference",
       moderate: 'Adjust your framing to better match the reference proportions',
       strong:
-          'Your framing is quite different from the reference — reframe to match',
+      'Your framing is quite different from the reference — reframe to match',
     );
 
     return _AttributeEvaluation(
@@ -608,16 +677,16 @@ class ReferenceComparisonEngine {
           Confidence(reference.confidenceFor('bodyRatio')),
         ).value,
         controllability:
-            kAttributeControllability[CoachingAttribute.bodyRatio]!,
+        kAttributeControllability[CoachingAttribute.bodyRatio]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateMouthOpen(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.mouthOpenRatio;
     final referenceValue = reference.mouthOpenRatio;
     if (subjectValue == null || referenceValue == null) return null;
@@ -642,19 +711,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Close your mouth just slightly',
-            moderate: 'Close your mouth a bit more, like the reference',
-            strong:
-                "Your mouth is a lot more open than the reference — close it more",
-          )
+      normalizedSeverity,
+      mild: 'Close your mouth just slightly',
+      moderate: 'Close your mouth a bit more, like the reference',
+      strong:
+      "Your mouth is a lot more open than the reference — close it more",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Open your mouth just slightly, like the reference',
-            moderate: 'Open your mouth more, like the reference',
-            strong:
-                "Your mouth is a lot more closed than the reference — open it more",
-          );
+      normalizedSeverity,
+      mild: 'Open your mouth just slightly, like the reference',
+      moderate: 'Open your mouth more, like the reference',
+      strong:
+      "Your mouth is a lot more closed than the reference — open it more",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -667,18 +736,18 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability:
-            kAttributeControllability[CoachingAttribute.mouthOpen]!,
+        kAttributeControllability[CoachingAttribute.mouthOpen]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateEyeOpen(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.eyeOpenRatio;
     final referenceValue = reference.eyeOpenRatio;
     if (subjectValue == null || referenceValue == null) return null;
@@ -703,19 +772,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Relax your eyes just a touch',
-            moderate: 'Ease your eyes to match the reference',
-            strong:
-                "Your eyes are much more open than the reference — relax them more",
-          )
+      normalizedSeverity,
+      mild: 'Relax your eyes just a touch',
+      moderate: 'Ease your eyes to match the reference',
+      strong:
+      "Your eyes are much more open than the reference — relax them more",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Open your eyes just a touch more',
-            moderate: 'Open your eyes more, like the reference',
-            strong:
-                "Your eyes are much more closed than the reference — open them more",
-          );
+      normalizedSeverity,
+      mild: 'Open your eyes just a touch more',
+      moderate: 'Open your eyes more, like the reference',
+      strong:
+      "Your eyes are much more closed than the reference — open them more",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -728,17 +797,17 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability: kAttributeControllability[CoachingAttribute.eyeOpen]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateExpression(
-    SubjectProfile subject,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SubjectProfile subject,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = subject.expression;
     final referenceValue = reference.expression;
     if (subjectValue == null || referenceValue == null) return null;
@@ -765,19 +834,19 @@ class ReferenceComparisonEngine {
         normalizedSeverity: deviation,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability:
-            kAttributeControllability[CoachingAttribute.expression]!,
+        kAttributeControllability[CoachingAttribute.expression]!,
         targetExpression: referenceValue,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateNegativeSpace(
-    SceneProfile scene,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SceneProfile scene,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = scene.negativeSpaceScore;
     final referenceValue = reference.negativeSpaceScore;
     if (referenceValue == null) return null;
@@ -797,19 +866,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Fill the frame just a touch more',
-            moderate: 'Fill the frame more, like your reference',
-            strong:
-                "There's a lot more empty space around you than the reference — fill the frame more",
-          )
+      normalizedSeverity,
+      mild: 'Fill the frame just a touch more',
+      moderate: 'Fill the frame more, like your reference',
+      strong:
+      "There's a lot more empty space around you than the reference — fill the frame more",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Give a touch more space in the frame',
-            moderate: 'Give more space in the frame, like your reference',
-            strong:
-                "You're filling the frame a lot more than the reference — give more space around you",
-          );
+      normalizedSeverity,
+      mild: 'Give a touch more space in the frame',
+      moderate: 'Give more space in the frame, like your reference',
+      strong:
+      "You're filling the frame a lot more than the reference — give more space around you",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -822,18 +891,18 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability:
-            kAttributeControllability[CoachingAttribute.negativeSpace]!,
+        kAttributeControllability[CoachingAttribute.negativeSpace]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateSymmetry(
-    SceneProfile scene,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SceneProfile scene,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = scene.symmetryScore;
     final referenceValue = reference.symmetryScore;
     if (referenceValue == null) return null;
@@ -856,7 +925,7 @@ class ReferenceComparisonEngine {
       mild: 'Center yourself just a touch more',
       moderate: 'Center yourself more, like the reference',
       strong:
-          "You're quite off-center — center yourself to match the reference",
+      "You're quite off-center — center yourself to match the reference",
     );
 
     return _AttributeEvaluation(
@@ -868,17 +937,17 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability: kAttributeControllability[CoachingAttribute.symmetry]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateBrightness(
-    SceneProfile scene,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SceneProfile scene,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = scene.brightness;
     final referenceValue = reference.overallBrightness;
     if (referenceValue == null) return null;
@@ -898,19 +967,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectValue > referenceValue
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Move to slightly softer light, like your reference',
-            moderate: 'Move to softer light, like your reference',
-            strong:
-                "You're in much brighter light than the reference — move somewhere softer",
-          )
+      normalizedSeverity,
+      mild: 'Move to slightly softer light, like your reference',
+      moderate: 'Move to softer light, like your reference',
+      strong:
+      "You're in much brighter light than the reference — move somewhere softer",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Find a touch more light, like your reference',
-            moderate: 'Find more light, like your reference',
-            strong:
-                "You're in much dimmer light than the reference — find somewhere brighter",
-          );
+      normalizedSeverity,
+      mild: 'Find a touch more light, like your reference',
+      moderate: 'Find more light, like your reference',
+      strong:
+      "You're in much dimmer light than the reference — find somewhere brighter",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -923,18 +992,18 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability:
-            kAttributeControllability[CoachingAttribute.brightness]!,
+        kAttributeControllability[CoachingAttribute.brightness]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateBackgroundClutter(
-    SceneProfile scene,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SceneProfile scene,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final referenceValue = reference.backgroundClutterCount;
     if (referenceValue == null) return null;
 
@@ -959,19 +1028,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectValue > normalizedReferenceValue
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Clean up the background just a touch, like your reference',
-            moderate: 'Clean up the background, like your reference',
-            strong:
-                "Your background is a lot busier than the reference — clean it up",
-          )
+      normalizedSeverity,
+      mild: 'Clean up the background just a touch, like your reference',
+      moderate: 'Clean up the background, like your reference',
+      strong:
+      "Your background is a lot busier than the reference — clean it up",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Add a touch of background interest, like your reference',
-            moderate: 'Add some background interest, like your reference',
-            strong:
-                "Your background is a lot plainer than the reference — add some interest",
-          );
+      normalizedSeverity,
+      mild: 'Add a touch of background interest, like your reference',
+      moderate: 'Add some background interest, like your reference',
+      strong:
+      "Your background is a lot plainer than the reference — add some interest",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -984,18 +1053,18 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability:
-            kAttributeControllability[CoachingAttribute.backgroundClutter]!,
+        kAttributeControllability[CoachingAttribute.backgroundClutter]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateWarmth(
-    SceneProfile scene,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SceneProfile scene,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = scene.liveWarmthScore;
     final referenceValue = reference.warmthScore;
     if (subjectValue == null || referenceValue == null) return null;
@@ -1015,19 +1084,19 @@ class ReferenceComparisonEngine {
 
     final phrase = subjectValue < referenceValue
         ? _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Find slightly warmer tones, like your reference',
-            moderate: 'Find warmer tones, like your reference',
-            strong:
-                "Your tones are a lot cooler than the reference — find much warmer light",
-          )
+      normalizedSeverity,
+      mild: 'Find slightly warmer tones, like your reference',
+      moderate: 'Find warmer tones, like your reference',
+      strong:
+      "Your tones are a lot cooler than the reference — find much warmer light",
+    )
         : _tieredPhrase(
-            normalizedSeverity,
-            mild: 'Cool down the tones just a touch, like your reference',
-            moderate: 'Cool down the tones, like your reference',
-            strong:
-                "Your tones are a lot warmer than the reference — find much cooler light",
-          );
+      normalizedSeverity,
+      mild: 'Cool down the tones just a touch, like your reference',
+      moderate: 'Cool down the tones, like your reference',
+      strong:
+      "Your tones are a lot warmer than the reference — find much cooler light",
+    );
 
     return _AttributeEvaluation(
       deviationExceedsThreshold: deviationExceedsThreshold,
@@ -1040,17 +1109,17 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability: kAttributeControllability[CoachingAttribute.warmth]!,
       ),
     );
   }
 
   _AttributeEvaluation? _evaluateHue(
-    SceneProfile scene,
-    ReferenceProfile reference,
-    ToleranceSettings tolerance,
-  ) {
+      SceneProfile scene,
+      ReferenceProfile reference,
+      ToleranceSettings tolerance,
+      ) {
     final subjectValue = scene.liveDominantHue;
     final referenceValue = reference.dominantHue;
     if (subjectValue == null || referenceValue == null) return null;
@@ -1077,7 +1146,7 @@ class ReferenceComparisonEngine {
       mild: 'Your color tone is slightly off from the reference',
       moderate: 'Match the color tone of your reference more closely',
       strong:
-          "Your color tone is quite different from the reference — try to match it",
+      "Your color tone is quite different from the reference — try to match it",
     );
 
     return _AttributeEvaluation(
@@ -1089,7 +1158,7 @@ class ReferenceComparisonEngine {
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
         confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        1.0, // no landmark-confidence signal wired for this attribute yet
         controllability: kAttributeControllability[CoachingAttribute.hue]!,
       ),
     );

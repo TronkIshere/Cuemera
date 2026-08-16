@@ -3,9 +3,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/memory_service.dart';
 import '../../voice_director/providers/coaching_phrase_model_providers.dart';
+import '../../voice_director/services/model_lifecycle.dart';
 
 const _aiCoachingEnabledKey = 'ai_coaching_enabled';
 
@@ -53,13 +53,20 @@ class AiCoachingSettings {
 
 class AiCoachingSettingsNotifier extends StateNotifier<AiCoachingSettings> {
   AiCoachingSettingsNotifier(this._ref) : super(AiCoachingSettings.initial) {
-    _ref.listen<bool>(coachingAiUnavailableProvider, (previous, next) {
-      state = state.copyWith(aiUnavailable: next);
+    _lifecycle = _ref.read(modelLifecycleManagerProvider);
+    _recoveryTimer = Timer.periodic(_recoveryCheckInterval, (_) {
+      if (!state.enabled) return;
+      if (_lifecycle.state != ModelLifecycleState.error) return;
+      unawaited(_install());
     });
     _loadPersisted();
   }
 
+  static const _recoveryCheckInterval = Duration(seconds: 5);
+
   final Ref _ref;
+  late final ModelLifecycleManager _lifecycle;
+  Timer? _recoveryTimer;
 
   Future<void> _loadPersisted() async {
     final memoryService = await _ref.read(memoryServiceProvider.future);
@@ -78,7 +85,7 @@ class AiCoachingSettingsNotifier extends StateNotifier<AiCoachingSettings> {
     await memoryService.setHabit(_aiCoachingEnabledKey, value);
     state = state.copyWith(enabled: value, clearError: true);
     if (value) {
-      _ref.read(coachingAiUnavailableProvider.notifier).state = false;
+      _lifecycle.resetBackoff();
       await _install();
     }
   }
@@ -88,34 +95,41 @@ class AiCoachingSettingsNotifier extends StateNotifier<AiCoachingSettings> {
     if (service == null) {
       state = state.copyWith(
         installError: 'AI coaching is not available on this build.',
+        aiUnavailable: false,
       );
       return;
     }
-    if (service.isReady) return;
+    if (_lifecycle.state == ModelLifecycleState.ready) return;
+    if (_lifecycle.isInBackoff) return;
 
     state = state.copyWith(
       isInstalling: true,
       installProgress: 0,
       clearError: true,
     );
-    try {
-      await service.ensureInstalled(
-        onProgress: (percent) {
-          state = state.copyWith(installProgress: percent);
-        },
-      );
-      state = state.copyWith(isInstalling: false, installProgress: 100);
-    } catch (e, st) {
-      ErrorReportingService.instance.report(
-        e,
-        st,
-        context: 'ai_coaching_providers: model initialization failure',
-      );
-      state = state.copyWith(
-        isInstalling: false,
-        installError: 'Download failed. Using standard coaching for now.',
-      );
-    }
+
+    await _lifecycle.ensureReady(
+      service,
+      onProgress: (percent) {
+        state = state.copyWith(installProgress: percent);
+      },
+    );
+
+    final ready = _lifecycle.state == ModelLifecycleState.ready;
+    state = state.copyWith(
+      isInstalling: false,
+      installProgress: ready ? 100 : state.installProgress,
+      installError: ready ? null : 'Download failed. Retrying automatically.',
+      clearError: ready,
+      aiUnavailable: !ready,
+    );
+    _ref.read(coachingAiUnavailableProvider.notifier).state = !ready;
+  }
+
+  @override
+  void dispose() {
+    _recoveryTimer?.cancel();
+    super.dispose();
   }
 }
 

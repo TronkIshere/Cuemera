@@ -325,7 +325,10 @@ class ReferenceImageAnalyzer {
       }
     }
 
-    final likelihoodGate = PoseLandmarkGate.fromLandmarks(landmarks: landmarks);
+    final likelihoodGate = PoseLandmarkGate.fromLandmarks(
+      landmarks: landmarks,
+      maskSignal: MaskTrustSignal.none,
+    );
 
     var maskSignal = MaskTrustSignal.none;
     if (mask != null && imageWidth != null && imageHeight != null) {
@@ -725,11 +728,6 @@ class ReferenceImageAnalyzer {
     required List<double> confidences,
     required double? shoulderAngleDegrees,
   }) {
-    if (shoulderAngleDegrees != null) {
-      final angle = shoulderAngleDegrees.abs();
-      return (1.0 - (angle / 45.0)).clamp(0.0, 1.0);
-    }
-
     if (confidences.isEmpty || width <= 0 || height <= 0) return null;
 
     int leftSubject = 0;
