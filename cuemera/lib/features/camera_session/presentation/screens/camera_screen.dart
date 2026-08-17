@@ -49,6 +49,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   bool _hasCaptured = false;
   EditorialScore? _lastCapturedScore;
   bool _showFlash = false;
+  bool _cameraDisposedForBackground = false;
 
   DateTime _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _throttleInterval = Duration(milliseconds: 80);
@@ -352,18 +353,50 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_state != _CameraInitState.ready) return;
-
     switch (state) {
       case AppLifecycleState.paused:
-      case AppLifecycleState.inactive:
+        // Actually backgrounded — safe to fully tear down.
+        if (_state != _CameraInitState.ready) return;
         _mlKitSubscription?.cancel();
         _mlKitSubscription = null;
+        _cameraDisposedForBackground = true;
+        if (mounted) {
+          setState(() => _state = _CameraInitState.loading);
+        }
         ref.read(cameraServiceProvider).pauseCameras();
         break;
-      case AppLifecycleState.resumed:
-        _initCamera();
+
+      case AppLifecycleState.inactive:
+        // Transient — e.g. pulling down the notification shade. Some OEM
+        // skins (confirmed on a real device: multiple onFocusEvent
+        // true/false toggles for a single gesture) fire this repeatedly;
+        // tearing down the whole camera pipeline on every one of these
+        // caused a "stuck loading" loop. Just pause the image stream —
+        // cheap, instant, nothing to reinitialize on the way back.
+        if (_state == _CameraInitState.ready) {
+          ref.read(cameraServiceProvider).stopImageStream();
+        }
         break;
+
+      case AppLifecycleState.resumed:
+        // NOTE: previously guarded by a single `if (_state != ready)
+        // return;` at the top of this method, shared with the paused/
+        // inactive branches above — since paused sets _state to loading
+        // right before this fires, that guard silently blocked resumed
+        // from ever calling _initCamera() again, leaving the camera
+        // stuck on the loading spinner permanently after any
+        // backgrounding. Each branch now checks only what it needs.
+        if (_cameraDisposedForBackground) {
+          _cameraDisposedForBackground = false;
+          _initCamera();
+        } else if (_state == _CameraInitState.ready) {
+          // Was only paused (inactive branch above), controller is still
+          // alive — resume the stream directly instead of a full
+          // teardown+reinit.
+          ref.read(cameraServiceProvider).startImageStream(_onFrame);
+        }
+        break;
+
       default:
         break;
     }
