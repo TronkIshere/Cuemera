@@ -27,6 +27,7 @@ import '../../../reference_photo/presentation/widgets/reference_picker_sheet.dar
 import '../../../reference_photo/providers/reference_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
+import '../../../settings/providers/live_detection_settings_provider.dart';
 import '../../../voice_director/providers/voice_providers.dart';
 import '../widgets/camera_preview_layer.dart';
 import '../widgets/camera_top_nav_bar.dart';
@@ -74,6 +75,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   void initState() {
     super.initState();
     _cameraService = ref.read(cameraServiceProvider);
+    ref.read(autoCaptureCountProvider.notifier).state = 0;
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initCamera();
@@ -90,16 +92,19 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     _mlKitSubscription = null;
 
     try {
+      final mlKitService = ref.read(mlKitServiceProvider);
+      await mlKitService.setAccurateMode(
+        ref.read(accurateLiveDetectionProvider),
+      );
+
       final cameraService = ref.read(cameraServiceProvider);
       await cameraService.init();
       ref.read(onFrameCallbackProvider.notifier).state = _onFrame;
       await cameraService.startImageStream(_onFrame);
 
-      _mlKitSubscription = ref.read(mlKitServiceProvider).analysisStream.listen(
-        (result) {
-          _latestMask = result.segmentationMask;
-        },
-      );
+      _mlKitSubscription = mlKitService.analysisStream.listen((result) {
+        _latestMask = result.segmentationMask;
+      });
 
       if (!mounted) return;
       setState(() => _state = _CameraInitState.ready);
@@ -407,6 +412,22 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           context,
         ).showSnackBar(SnackBar(content: Text(message)));
         ref.read(gallerySaveWarningProvider.notifier).state = null;
+      });
+    });
+
+    ref.listen<bool>(accurateLiveDetectionProvider, (previous, next) {
+      if (previous == next) return;
+      ref.read(mlKitServiceProvider).setAccurateMode(next);
+    });
+
+    ref.listen<String?>(autoCaptureSessionMessageProvider, (previous, message) {
+      if (message == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+        ref.read(autoCaptureSessionMessageProvider.notifier).state = null;
       });
     });
 

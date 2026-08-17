@@ -10,6 +10,7 @@ import '../../../../core/services/theme_preference_service.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../providers/ai_coaching_providers.dart';
 import '../../providers/coaching_v2_settings_provider.dart';
+import '../../providers/live_detection_settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -26,6 +27,8 @@ class SettingsScreen extends ConsumerWidget {
 
     final coachingV2 = ref.watch(coachingV2SettingsProvider);
     final coachingV2Notifier = ref.read(coachingV2SettingsProvider.notifier);
+
+    final accurateLiveDetection = ref.watch(accurateLiveDetectionProvider);
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -194,6 +197,46 @@ class SettingsScreen extends ConsumerWidget {
                         value: coachingV2.enabled,
                         onChanged: (value) =>
                             coachingV2Notifier.setEnabled(value),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _SettingsCard(
+                  colors: colors,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Accurate Detection',
+                              style: AppTypography.body(
+                                colors,
+                              ).copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'More precise live pose/face tracking. Uses '
+                              'more battery/CPU — may feel slower on some '
+                              'devices.',
+                              style: AppTypography.caption(
+                                colors,
+                              ).copyWith(color: colors.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: accurateLiveDetection,
+                        onChanged: (value) =>
+                            ref
+                                    .read(
+                                      accurateLiveDetectionProvider.notifier,
+                                    )
+                                    .state =
+                                value,
                       ),
                     ],
                   ),

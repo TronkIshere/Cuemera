@@ -23,6 +23,9 @@ class AutoCaptureService {
     final faceOk = _faceOk(subject, reference, tolerance);
     final facePitchOk = _facePitchOk(subject, reference, tolerance);
     final faceRollOk = _faceRollOk(subject, reference, tolerance);
+    final bodyYawOk = _bodyYawOk(subject, reference, tolerance);
+    final shoulderBalanceOk = _shoulderBalanceOk(subject, reference, tolerance);
+    final shoulderSpanOk = _shoulderSpanOk(subject, reference, tolerance);
     final bodyRatioOk = _bodyRatioOk(subject, reference, tolerance);
     final mouthOpenOk = _mouthOpenOk(subject, reference, tolerance);
     final negativeSpaceOk = _negativeSpaceOk(scene, reference, tolerance);
@@ -33,6 +36,9 @@ class AutoCaptureService {
         !faceOk ||
         !facePitchOk ||
         !faceRollOk ||
+        !bodyYawOk ||
+        !shoulderBalanceOk ||
+        !shoulderSpanOk ||
         !bodyRatioOk ||
         !mouthOpenOk ||
         !negativeSpaceOk ||
@@ -69,6 +75,9 @@ class AutoCaptureService {
     final faceOk = _faceOk(subject, reference, tolerance);
     final facePitchOk = _facePitchOk(subject, reference, tolerance);
     final faceRollOk = _faceRollOk(subject, reference, tolerance);
+    final bodyYawOk = _bodyYawOk(subject, reference, tolerance);
+    final shoulderBalanceOk = _shoulderBalanceOk(subject, reference, tolerance);
+    final shoulderSpanOk = _shoulderSpanOk(subject, reference, tolerance);
     final bodyRatioOk = _bodyRatioOk(subject, reference, tolerance);
     final mouthOpenOk = _mouthOpenOk(subject, reference, tolerance);
     final negativeSpaceOk = _negativeSpaceOk(scene, reference, tolerance);
@@ -85,6 +94,9 @@ class AutoCaptureService {
       'faceAngle': faceOk,
       'facePitch': facePitchOk,
       'faceRoll': faceRollOk,
+      'bodyYaw': bodyYawOk,
+      'shoulderBalance': shoulderBalanceOk,
+      'shoulderSpan': shoulderSpanOk,
       'bodyRatio': bodyRatioOk,
       'mouthOpen': mouthOpenOk,
       'negativeSpace': negativeSpaceOk,
@@ -106,7 +118,11 @@ class AutoCaptureService {
     final subjectValue = subject.shoulderAngleDegrees;
     if (subjectValue == null) return false;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
     return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
@@ -121,7 +137,11 @@ class AutoCaptureService {
     final referenceValue = reference.faceAngleDegrees;
     if (referenceValue == null) return true;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
     return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
@@ -136,7 +156,11 @@ class AutoCaptureService {
     final referenceValue = reference.faceAngleXDegrees;
     if (referenceValue == null) return true;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
     return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
@@ -151,8 +175,75 @@ class AutoCaptureService {
     final referenceValue = reference.faceAngleZDegrees;
     if (referenceValue == null) return true;
 
-    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
     final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _bodyYawOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final referenceValue = reference.bodyYawEstimate;
+    if (referenceValue == null) return true;
+    final subjectValue = subject.bodyYawEstimate;
+    if (subjectValue == null) return false;
+
+    final deviation = ComparisonMath.circularDeviation(
+      subjectValue,
+      referenceValue,
+      360.0,
+    );
+    final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _shoulderBalanceOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final referenceValue = reference.shoulderBalanceRatio;
+    if (referenceValue == null) return true;
+    final subjectValue = subject.shoulderBalanceRatio;
+    if (subjectValue == null) return false;
+
+    final deviation = ComparisonMath.relativeDeviation(
+      subjectValue,
+      referenceValue,
+    );
+    if (deviation == null) return true;
+
+    final threshold = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
+    return !ComparisonMath.exceedsThreshold(deviation, threshold);
+  }
+
+  bool _shoulderSpanOk(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+    ToleranceSettings tolerance,
+  ) {
+    final referenceValue = reference.shoulderSpanRatio;
+    if (referenceValue == null) return true;
+    final subjectValue = subject.shoulderSpanRatio;
+    if (subjectValue == null) return false;
+
+    final deviation = ComparisonMath.relativeDeviation(
+      subjectValue,
+      referenceValue,
+    );
+    if (deviation == null) return true;
+
+    final threshold = ComparisonMath.thresholdForPoseRatio(
+      tolerance.poseTolerance,
+    );
     return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
 

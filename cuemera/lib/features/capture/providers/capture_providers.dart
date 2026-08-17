@@ -22,11 +22,22 @@ const gallerySaveFailedMessage =
 
 const holdStillPhrase = 'Hold still.';
 
+const maxAutoCaptureShots = 3;
+
+const sessionCompletePhrase = "That's 3 shots. Reviewing now.";
+
 final autoCaptureServiceProvider = Provider<AutoCaptureService>((ref) {
   return AutoCaptureService();
 });
 
+final autoCaptureCountProvider = StateProvider<int>((ref) => 0);
+
+final autoCaptureSessionMessageProvider = StateProvider<String?>((ref) => null);
+
 final shouldCaptureProvider = Provider<bool>((ref) {
+  final autoCaptureCount = ref.watch(autoCaptureCountProvider);
+  if (autoCaptureCount >= maxAutoCaptureShots) return false;
+
   final subject = ref.watch(subjectProfileProvider);
   final scene = ref.watch(sceneProfileProvider);
   final trackingProgress = ref.watch(trackingProgressProvider);
@@ -54,6 +65,13 @@ final autoCaptureProvider = Provider<void>((ref) {
   final ttsService = ref.watch(appTtsServiceProvider);
 
   var captureInFlight = false;
+
+  // A newly-picked reference photo starts a fresh 3-shot session.
+  ref.listen<String?>(selectedReferenceImagePathProvider, (previous, next) {
+    if (previous == next) return;
+    ref.read(autoCaptureCountProvider.notifier).state = 0;
+    ref.read(autoCaptureSessionMessageProvider.notifier).state = null;
+  });
 
   ref.listen<bool>(shouldCaptureProvider, (previous, shouldCapture) async {
     if (shouldCapture != true || captureInFlight) return;
@@ -88,6 +106,16 @@ final autoCaptureProvider = Provider<void>((ref) {
       );
 
       ref.read(capturedShotProvider.notifier).state = shot;
+
+      final countNotifier = ref.read(autoCaptureCountProvider.notifier);
+      final newCount = countNotifier.state + 1;
+      countNotifier.state = newCount;
+
+      if (newCount >= maxAutoCaptureShots) {
+        await ttsService.speak(sessionCompletePhrase, force: true);
+        ref.read(autoCaptureSessionMessageProvider.notifier).state =
+            sessionCompletePhrase;
+      }
     } finally {
       captureInFlight = false;
     }

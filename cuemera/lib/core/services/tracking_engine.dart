@@ -318,9 +318,10 @@ class TrackingEngine {
       if (current.faceAngleDegrees == null) {
         scores.add(0.0);
       } else {
-        final deviation = ComparisonMath.deviation(
+        final deviation = ComparisonMath.circularDeviation(
           current.faceAngleDegrees!,
           target.faceAngleDegrees!,
+          360.0,
         );
         final threshold = ComparisonMath.thresholdForPose(
           tolerance.poseTolerance,
@@ -332,6 +333,74 @@ class TrackingEngine {
             ComparisonMath.maxDeviationForPose,
           ),
         );
+      }
+    }
+
+    if (target.bodyYawEstimate != null) {
+      if (current.bodyYawEstimate == null) {
+        scores.add(0.0);
+      } else {
+        final deviation = ComparisonMath.circularDeviation(
+          current.bodyYawEstimate!,
+          target.bodyYawEstimate!,
+          360.0,
+        );
+        final threshold = ComparisonMath.thresholdForPose(
+          tolerance.poseTolerance,
+        );
+        scores.add(
+          ComparisonMath.similarity(
+            deviation,
+            threshold,
+            ComparisonMath.maxDeviationForPose,
+          ),
+        );
+      }
+    }
+
+    if (target.shoulderBalanceRatio != null) {
+      if (current.shoulderBalanceRatio == null) {
+        scores.add(0.0);
+      } else {
+        final deviation = ComparisonMath.relativeDeviation(
+          current.shoulderBalanceRatio!,
+          target.shoulderBalanceRatio!,
+        );
+        if (deviation != null) {
+          final threshold = ComparisonMath.thresholdForPoseRatio(
+            tolerance.poseTolerance,
+          );
+          scores.add(
+            ComparisonMath.similarity(
+              deviation,
+              threshold,
+              ComparisonMath.maxDeviationForPoseRatio,
+            ),
+          );
+        }
+      }
+    }
+
+    if (target.shoulderSpanRatio != null) {
+      if (current.shoulderSpanRatio == null) {
+        scores.add(0.0);
+      } else {
+        final deviation = ComparisonMath.relativeDeviation(
+          current.shoulderSpanRatio!,
+          target.shoulderSpanRatio!,
+        );
+        if (deviation != null) {
+          final threshold = ComparisonMath.thresholdForPoseRatio(
+            tolerance.poseTolerance,
+          );
+          scores.add(
+            ComparisonMath.similarity(
+              deviation,
+              threshold,
+              ComparisonMath.maxDeviationForPoseRatio,
+            ),
+          );
+        }
       }
     }
 

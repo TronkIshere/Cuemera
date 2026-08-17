@@ -29,10 +29,13 @@ const Map<DeviceOrientation, int> _androidRotationCompensation = {
 };
 
 class MlKitService {
-  final PoseDetector _poseDetector = PoseDetector(
-    options: PoseDetectorOptions(mode: PoseDetectionMode.stream),
+  PoseDetector _poseDetector = PoseDetector(
+    options: PoseDetectorOptions(
+      mode: PoseDetectionMode.stream,
+      model: PoseDetectionModel.base,
+    ),
   );
-  final FaceDetector _faceDetector = FaceDetector(
+  FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
       performanceMode: FaceDetectorMode.fast,
       enableTracking: true,
@@ -43,6 +46,9 @@ class MlKitService {
     mode: SegmenterMode.stream,
     enableRawSizeMask: true,
   );
+
+  bool _accurateMode = false;
+  bool get accurateMode => _accurateMode;
 
   final _resultController = StreamController<MlKitAnalysisResult>.broadcast();
   final _availabilityController = StreamController<bool>.broadcast();
@@ -56,11 +62,47 @@ class MlKitService {
 
   Stream<bool> get unavailableStream => _availabilityController.stream;
 
+  Future<void> setAccurateMode(bool accurate) async {
+    if (accurate == _accurateMode) return;
+
+    while (_busy) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+
+    final oldPoseDetector = _poseDetector;
+    final oldFaceDetector = _faceDetector;
+
+    _poseDetector = PoseDetector(
+      options: PoseDetectorOptions(
+        mode: PoseDetectionMode.stream,
+        model: accurate ? PoseDetectionModel.accurate : PoseDetectionModel.base,
+      ),
+    );
+    _faceDetector = FaceDetector(
+      options: FaceDetectorOptions(
+        performanceMode: accurate
+            ? FaceDetectorMode.accurate
+            : FaceDetectorMode.fast,
+        enableTracking: true,
+        enableClassification: false,
+      ),
+    );
+    _accurateMode = accurate;
+
+    await oldPoseDetector.close();
+    await oldFaceDetector.close();
+
+    debugPrint(
+      'MlKitService: switched live detection to '
+      '${accurate ? 'accurate' : 'fast'} model',
+    );
+  }
+
   @visibleForTesting
   InputImageRotation? rotationFor(
-      CameraDescription description,
-      DeviceOrientation deviceOrientation,
-      ) {
+    CameraDescription description,
+    DeviceOrientation deviceOrientation,
+  ) {
     if (Platform.isIOS) {
       return InputImageRotationValue.fromRawValue(
         description.sensorOrientation,
@@ -82,10 +124,10 @@ class MlKitService {
   }
 
   Future<void> processImage(
-      CameraImage image,
-      CameraDescription description,
-      DeviceOrientation deviceOrientation,
-      ) async {
+    CameraImage image,
+    CameraDescription description,
+    DeviceOrientation deviceOrientation,
+  ) async {
     if (_busy) return;
     _busy = true;
 
