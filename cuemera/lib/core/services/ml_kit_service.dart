@@ -50,6 +50,10 @@ class MlKitService {
   bool _accurateMode = false;
   bool get accurateMode => _accurateMode;
 
+  static const bool debugLogFrameTiming = false;
+  static const bool debugLogRotation = false;
+  int? lastProcessImageMicros;
+
   final _resultController = StreamController<MlKitAnalysisResult>.broadcast();
   final _availabilityController = StreamController<bool>.broadcast();
   bool _busy = false;
@@ -104,13 +108,31 @@ class MlKitService {
     DeviceOrientation deviceOrientation,
   ) {
     if (Platform.isIOS) {
-      return InputImageRotationValue.fromRawValue(
+      final result = InputImageRotationValue.fromRawValue(
         description.sensorOrientation,
       );
+      if (debugLogRotation) {
+        debugPrint(
+          'MlKitService.rotationFor(): platform=iOS '
+          'lens=${description.lensDirection.name} '
+          'sensorOrientation=${description.sensorOrientation} -> '
+          'result=${result?.rawValue}',
+        );
+      }
+      return result;
     }
 
     final deviceRotation = _androidRotationCompensation[deviceOrientation];
-    if (deviceRotation == null) return null;
+    if (deviceRotation == null) {
+      if (debugLogRotation) {
+        debugPrint(
+          'MlKitService.rotationFor(): platform=Android '
+          'deviceOrientation=${deviceOrientation.name} has no compensation '
+          'entry -> result=null',
+        );
+      }
+      return null;
+    }
 
     final int rotationCompensation;
     if (description.lensDirection == CameraLensDirection.front) {
@@ -120,7 +142,19 @@ class MlKitService {
       rotationCompensation =
           (description.sensorOrientation - deviceRotation + 360) % 360;
     }
-    return InputImageRotationValue.fromRawValue(rotationCompensation);
+    final result = InputImageRotationValue.fromRawValue(rotationCompensation);
+    if (debugLogRotation) {
+      debugPrint(
+        'MlKitService.rotationFor(): platform=Android '
+        'lens=${description.lensDirection.name} '
+        'sensorOrientation=${description.sensorOrientation} '
+        'deviceOrientation=${deviceOrientation.name} '
+        'deviceRotationCompensation=$deviceRotation '
+        'rotationCompensation=$rotationCompensation -> '
+        'result=${result?.rawValue}',
+      );
+    }
+    return result;
   }
 
   Future<void> processImage(
@@ -138,6 +172,8 @@ class MlKitService {
       final inputImage = _toInputImage(image, rotation);
       if (inputImage == null) return;
 
+      final stopwatch = debugLogFrameTiming ? (Stopwatch()..start()) : null;
+
       final posesFuture = _poseDetector.processImage(inputImage);
       final facesFuture = _faceDetector.processImage(inputImage);
       final maskFuture = _segmenter.processImage(inputImage);
@@ -145,6 +181,15 @@ class MlKitService {
       final poses = await posesFuture;
       final faces = await facesFuture;
       final mask = await maskFuture;
+
+      if (stopwatch != null) {
+        stopwatch.stop();
+        lastProcessImageMicros = stopwatch.elapsedMicroseconds;
+        debugPrint(
+          '[MlKitService] processImage: pose+face+mask concurrent wait took '
+          '${stopwatch.elapsedMicroseconds}us (accurateMode=$_accurateMode)',
+        );
+      }
 
       _resultController.add(
         MlKitAnalysisResult(poses: poses, faces: faces, segmentationMask: mask),
@@ -184,7 +229,9 @@ class MlKitService {
     final metadata = InputImageMetadata(
       size: Size(image.width.toDouble(), image.height.toDouble()),
       rotation: rotation,
-      format: InputImageFormat.nv21,
+      format: Platform.isAndroid
+          ? InputImageFormat.nv21
+          : InputImageFormat.bgra8888,
       bytesPerRow: image.planes.first.bytesPerRow,
     );
     return InputImage.fromBytes(bytes: bytes, metadata: metadata);

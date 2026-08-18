@@ -1,4 +1,6 @@
 // core/services/camera_service.dart
+import 'dart:io' show Platform;
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,9 +42,11 @@ class CameraService {
     await _controller?.dispose();
     _controller = CameraController(
       description,
-      ResolutionPreset.high,
+      ResolutionPreset.medium,
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.nv21,
+      imageFormatGroup: Platform.isAndroid
+          ? ImageFormatGroup.nv21
+          : ImageFormatGroup.bgra8888,
     );
     await _controller!.initialize();
     _minZoom = await _controller!.getMinZoomLevel();
