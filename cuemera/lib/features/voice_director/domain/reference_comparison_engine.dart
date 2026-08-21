@@ -26,11 +26,6 @@ class ReferenceComparisonEngine {
     );
   }
 
-  /// Builds the three tiers' exceeding-threshold candidates as [ActionPlan]s
-  /// (pose/face root-cause-collapsed), without picking a single winner —
-  /// shared by [evaluate] (which picks one via [pickAcrossTiers]) and the
-  /// state-machine listener (step 10), which needs the raw per-tier lists
-  /// for its own eligibility filtering + selection.
   TierCandidates evaluateTiers({
     required SubjectProfile subject,
     required SceneProfile scene,
