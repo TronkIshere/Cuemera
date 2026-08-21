@@ -11,31 +11,32 @@ enum ActionControllability {
   doNotCoach,
 }
 
-const Map<CoachingAttribute, ActionControllability> kAttributeControllability =
-    {
-      CoachingAttribute.shoulderAngle: ActionControllability.subjectAction,
-      CoachingAttribute.facePitch: ActionControllability.subjectAction,
-      CoachingAttribute.faceRoll: ActionControllability.subjectAction,
-      CoachingAttribute.faceYaw: ActionControllability.subjectAction,
-      CoachingAttribute.shoulderBalance: ActionControllability.subjectAction,
-      CoachingAttribute.shoulderSpan: ActionControllability.subjectAction,
-      CoachingAttribute.bodyYaw: ActionControllability.subjectAction,
-      CoachingAttribute.rightArmPosition: ActionControllability.subjectAction,
-      CoachingAttribute.leftArmPosition: ActionControllability.subjectAction,
-      CoachingAttribute.mouthOpen: ActionControllability.subjectAction,
-      CoachingAttribute.eyeOpen: ActionControllability.subjectAction,
-      CoachingAttribute.expression: ActionControllability.subjectAction,
+const Map<CoachingAttribute, ActionControllability>
+kAttributeControllability = {
+  CoachingAttribute.shoulderAngle: ActionControllability.subjectAction,
+  CoachingAttribute.facePitch: ActionControllability.subjectAction,
+  CoachingAttribute.faceRoll: ActionControllability.subjectAction,
+  CoachingAttribute.faceYaw: ActionControllability.subjectAction,
+  CoachingAttribute.shoulderBalance: ActionControllability.subjectAction,
+  CoachingAttribute.shoulderSpan: ActionControllability.subjectAction,
+  CoachingAttribute.bodyYaw: ActionControllability.subjectAction,
+  CoachingAttribute.rightArmPosition: ActionControllability.subjectAction,
+  CoachingAttribute.leftArmPosition: ActionControllability.subjectAction,
+  CoachingAttribute.mouthOpen: ActionControllability.subjectAction,
+  CoachingAttribute.eyeOpen: ActionControllability.subjectAction,
+  CoachingAttribute.expression: ActionControllability.subjectAction,
 
-      CoachingAttribute.bodyRatio: ActionControllability.cameraAction,
-      CoachingAttribute.negativeSpace: ActionControllability.compositionAction,
-      CoachingAttribute.symmetry: ActionControllability.compositionAction,
-      CoachingAttribute.backgroundClutter:
-          ActionControllability.environmentAction,
+  CoachingAttribute.bodyRatio: ActionControllability.cameraAction,
+  CoachingAttribute.negativeSpace: ActionControllability.compositionAction,
+  CoachingAttribute.symmetry: ActionControllability.compositionAction,
+  CoachingAttribute.subjectPosition: ActionControllability.compositionAction,
+  CoachingAttribute.backgroundClutter: ActionControllability.environmentAction,
 
-      CoachingAttribute.brightness: ActionControllability.lightingAction,
-      CoachingAttribute.warmth: ActionControllability.lightingAction,
-      CoachingAttribute.hue: ActionControllability.lightingAction,
-    };
+  CoachingAttribute.brightness: ActionControllability.lightingAction,
+  CoachingAttribute.warmth: ActionControllability.lightingAction,
+  CoachingAttribute.hue: ActionControllability.lightingAction,
+  CoachingAttribute.lightDirection: ActionControllability.lightingAction,
+};
 
 const Map<CoachingAttribute, String> kExpectedVisualEffect = {
   CoachingAttribute.shoulderAngle: 'shoulder_line_matches_reference_tilt',
@@ -53,10 +54,12 @@ const Map<CoachingAttribute, String> kExpectedVisualEffect = {
   CoachingAttribute.bodyRatio: 'framing_matches_reference_proportions',
   CoachingAttribute.negativeSpace: 'frame_fill_matches_reference',
   CoachingAttribute.symmetry: 'subject_centered_in_frame',
+  CoachingAttribute.subjectPosition: 'subject_position_matches_reference',
   CoachingAttribute.backgroundClutter: 'background_busyness_reduced',
   CoachingAttribute.brightness: 'exposure_matches_reference',
   CoachingAttribute.warmth: 'color_temperature_matches_reference',
   CoachingAttribute.hue: 'dominant_hue_matches_reference',
+  CoachingAttribute.lightDirection: 'light_direction_matches_reference',
 };
 
 class ActionPlan {

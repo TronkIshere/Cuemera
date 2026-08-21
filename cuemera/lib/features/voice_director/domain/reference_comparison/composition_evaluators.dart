@@ -107,6 +107,62 @@ AttributeEvaluation? evaluateSymmetry(
   );
 }
 
+AttributeEvaluation? evaluateSubjectPosition(
+  SceneProfile scene,
+  ReferenceProfile reference,
+  ToleranceSettings tolerance,
+) {
+  final subjectValue = scene.subjectHorizontalPosition;
+  final referenceValue = reference.subjectHorizontalPosition;
+  if (subjectValue == null || referenceValue == null) return null;
+
+  final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
+  final normalizedSeverity = ComparisonMath.normalizedSeverity(
+    deviation,
+    ComparisonMath.maxDeviationForComposition,
+  );
+  final thresholdForComposition = ComparisonMath.thresholdForComposition(
+    tolerance.compositionTolerance,
+  );
+  final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+    deviation,
+    thresholdForComposition,
+  );
+
+  final phrase = subjectValue > referenceValue
+      ? tieredPhrase(
+          normalizedSeverity,
+          mild: 'Shift slightly left in the frame',
+          moderate: 'Move left in the frame, like your reference',
+          strong:
+              "You're positioned well to the right of the reference — move left in the frame",
+        )
+      : tieredPhrase(
+          normalizedSeverity,
+          mild: 'Shift slightly right in the frame',
+          moderate: 'Move right in the frame, like your reference',
+          strong:
+              "You're positioned well to the left of the reference — move right in the frame",
+        );
+
+  return AttributeEvaluation(
+    deviationExceedsThreshold: deviationExceedsThreshold,
+    decision: CoachingDecision(
+      attribute: CoachingAttribute.subjectPosition,
+      direction: subjectValue > referenceValue
+          ? CoachingDirection.left
+          : CoachingDirection.right,
+      tier: CoachingTier.composition,
+      normalizedSeverity: normalizedSeverity,
+      fallbackPhrase: phrase,
+      confidence:
+          1.0, // no landmark-confidence signal wired for this attribute yet
+      controllability:
+          kAttributeControllability[CoachingAttribute.subjectPosition]!,
+    ),
+  );
+}
+
 AttributeEvaluation? evaluateBackgroundClutter(
   SceneProfile scene,
   ReferenceProfile reference,

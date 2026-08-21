@@ -15,6 +15,8 @@ class SubjectProfile {
     this.rightArmRaiseDegrees,
     this.leftElbowAngleDegrees,
     this.rightElbowAngleDegrees,
+    this.leftArmPoseCategory,
+    this.rightArmPoseCategory,
     this.eyesOpen,
     this.expression,
     this.metricConfidence,
@@ -42,6 +44,9 @@ class SubjectProfile {
   final double? rightArmRaiseDegrees;
   final double? leftElbowAngleDegrees;
   final double? rightElbowAngleDegrees;
+
+  final String? leftArmPoseCategory;
+  final String? rightArmPoseCategory;
 
   final bool? eyesOpen;
   final String? expression;
@@ -74,6 +79,8 @@ class SubjectProfile {
     Object? rightArmRaiseDegrees = _unset,
     Object? leftElbowAngleDegrees = _unset,
     Object? rightElbowAngleDegrees = _unset,
+    Object? leftArmPoseCategory = _unset,
+    Object? rightArmPoseCategory = _unset,
     Object? eyesOpen = _unset,
     Object? expression = _unset,
     Object? metricConfidence = _unset,
@@ -124,6 +131,12 @@ class SubjectProfile {
       rightElbowAngleDegrees: identical(rightElbowAngleDegrees, _unset)
           ? this.rightElbowAngleDegrees
           : rightElbowAngleDegrees as double?,
+      leftArmPoseCategory: identical(leftArmPoseCategory, _unset)
+          ? this.leftArmPoseCategory
+          : leftArmPoseCategory as String?,
+      rightArmPoseCategory: identical(rightArmPoseCategory, _unset)
+          ? this.rightArmPoseCategory
+          : rightArmPoseCategory as String?,
       eyesOpen: identical(eyesOpen, _unset) ? this.eyesOpen : eyesOpen as bool?,
       expression: identical(expression, _unset)
           ? this.expression

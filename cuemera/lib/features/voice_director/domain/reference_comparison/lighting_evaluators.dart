@@ -165,3 +165,53 @@ AttributeEvaluation? evaluateHue(
     ),
   );
 }
+
+AttributeEvaluation? evaluateLightDirection(
+  SceneProfile scene,
+  ReferenceProfile reference,
+  ToleranceSettings tolerance,
+) {
+  final subjectValue = scene.lightDirectionDegrees;
+  final referenceValue = reference.lightDirectionDegrees;
+  if (subjectValue == null || referenceValue == null) return null;
+
+  final deviation = ComparisonMath.circularDeviation(
+    subjectValue,
+    referenceValue,
+    360.0,
+  );
+  final normalizedSeverity = ComparisonMath.normalizedSeverity(
+    deviation,
+    ComparisonMath.maxDeviationForHue,
+  );
+  final thresholdForLightDirection = ComparisonMath.thresholdForHue(
+    tolerance.colorTolerance,
+  );
+  final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+    deviation,
+    thresholdForLightDirection,
+  );
+
+  final phrase = tieredPhrase(
+    normalizedSeverity,
+    mild: 'The light direction is slightly off from the reference',
+    moderate: 'Reposition to match the light direction of your reference',
+    strong:
+        "The light is coming from a different direction than the reference — reposition to match it",
+  );
+
+  return AttributeEvaluation(
+    deviationExceedsThreshold: deviationExceedsThreshold,
+    decision: CoachingDecision(
+      attribute: CoachingAttribute.lightDirection,
+      direction: CoachingDirection.none, // single-direction by design
+      tier: CoachingTier.lighting,
+      normalizedSeverity: normalizedSeverity,
+      fallbackPhrase: phrase,
+      confidence:
+          1.0, // no landmark-confidence signal wired for this attribute yet
+      controllability:
+          kAttributeControllability[CoachingAttribute.lightDirection]!,
+    ),
+  );
+}

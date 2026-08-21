@@ -23,6 +23,8 @@ enum CoachingAttribute {
   bodyYaw,
   rightArmPosition,
   leftArmPosition,
+  lightDirection,
+  subjectPosition,
 }
 
 enum CoachingDirection { increase, decrease, left, right, none }

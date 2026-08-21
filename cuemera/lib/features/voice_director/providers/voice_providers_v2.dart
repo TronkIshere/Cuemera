@@ -78,6 +78,10 @@ double? currentMeasurementFor(
       return scene.liveWarmthScore;
     case CoachingAttribute.hue:
       return scene.liveDominantHue;
+    case CoachingAttribute.lightDirection:
+      return scene.lightDirectionDegrees;
+    case CoachingAttribute.subjectPosition:
+      return scene.subjectHorizontalPosition;
   }
 }
 
@@ -123,6 +127,10 @@ double? referenceMeasurementFor(
       return reference.warmthScore;
     case CoachingAttribute.hue:
       return reference.dominantHue;
+    case CoachingAttribute.lightDirection:
+      return reference.lightDirectionDegrees;
+    case CoachingAttribute.subjectPosition:
+      return reference.subjectHorizontalPosition;
   }
 }
 

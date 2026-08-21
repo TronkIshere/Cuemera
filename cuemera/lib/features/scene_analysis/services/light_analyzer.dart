@@ -50,6 +50,7 @@ class LightAnalyzer {
       lightDirectionDegrees: lumaStats.lightDirectionDegrees,
       negativeSpaceScore: negativeSpaceScore,
       symmetryScore: symmetryScore,
+      subjectHorizontalPosition: maskStats?.centroidXRatio,
       backgroundClutterCount: backgroundClutterCount,
       depthEstimate: depthEstimate,
       liveWarmthScore: warmth,
@@ -122,6 +123,7 @@ class LightAnalyzer {
     int sampledPixels = 0;
     int leftSubjectPixels = 0;
     int rightSubjectPixels = 0;
+    int sumX = 0;
 
     for (var y = 0; y < height; y += step) {
       final rowOffset = y * width;
@@ -133,6 +135,7 @@ class LightAnalyzer {
         if (confidences[index] <= 0.5) continue;
 
         subjectPixels++;
+        sumX += x;
         if (x < halfWidth) {
           leftSubjectPixels++;
         } else {
@@ -147,6 +150,7 @@ class LightAnalyzer {
       subjectRatio: subjectPixels / sampledPixels,
       leftSubjectPixels: leftSubjectPixels,
       rightSubjectPixels: rightSubjectPixels,
+      centroidXRatio: subjectPixels > 0 ? (sumX / subjectPixels) / width : null,
     );
   }
 
@@ -325,9 +329,11 @@ class _MaskStats {
     required this.subjectRatio,
     required this.leftSubjectPixels,
     required this.rightSubjectPixels,
+    required this.centroidXRatio,
   });
 
   final double subjectRatio;
   final int leftSubjectPixels;
   final int rightSubjectPixels;
+  final double? centroidXRatio;
 }

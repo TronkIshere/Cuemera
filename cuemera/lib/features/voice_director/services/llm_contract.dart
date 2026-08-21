@@ -18,10 +18,12 @@ const Map<CoachingAttribute, List<String>> kAttributeTopicKeywords = {
   CoachingAttribute.expression: ['smile', 'expression'],
   CoachingAttribute.negativeSpace: ['space', 'frame'],
   CoachingAttribute.symmetry: ['center', 'centered'],
+  CoachingAttribute.subjectPosition: ['frame', 'move', 'position'],
   CoachingAttribute.backgroundClutter: ['background'],
   CoachingAttribute.brightness: ['light', 'bright', 'dim'],
   CoachingAttribute.warmth: ['warm', 'cool', 'tone'],
   CoachingAttribute.hue: ['color', 'tone'],
+  CoachingAttribute.lightDirection: ['light', 'shadow', 'direction'],
 };
 
 /// Human-readable label used in the prompt in place of the raw enum name.
@@ -41,10 +43,12 @@ const Map<CoachingAttribute, String> kAttributeHumanName = {
   CoachingAttribute.expression: 'facial expression',
   CoachingAttribute.negativeSpace: 'how much empty space is in frame',
   CoachingAttribute.symmetry: 'how centered the subject is',
+  CoachingAttribute.subjectPosition: 'where the subject sits in the frame',
   CoachingAttribute.backgroundClutter: 'background busyness',
   CoachingAttribute.brightness: 'brightness',
   CoachingAttribute.warmth: 'color warmth',
   CoachingAttribute.hue: 'color tone',
+  CoachingAttribute.lightDirection: 'which direction the light comes from',
 };
 
 class LlmCoachingContract {

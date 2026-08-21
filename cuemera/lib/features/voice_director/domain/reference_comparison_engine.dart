@@ -57,6 +57,10 @@ class ReferenceComparisonEngine {
     );
     addIfPresent(
       poseAndFaceTier,
+      evaluateFaceYaw(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
       evaluateBodyRatio(subject, reference, tolerance),
     );
     addIfPresent(
@@ -102,12 +106,20 @@ class ReferenceComparisonEngine {
     );
     addIfPresent(
       compositionTier,
+      evaluateSubjectPosition(scene, reference, tolerance),
+    );
+    addIfPresent(
+      compositionTier,
       evaluateBackgroundClutter(scene, reference, tolerance),
     );
 
     addIfPresent(lightingTier, evaluateBrightness(scene, reference, tolerance));
     addIfPresent(lightingTier, evaluateWarmth(scene, reference, tolerance));
     addIfPresent(lightingTier, evaluateHue(scene, reference, tolerance));
+    addIfPresent(
+      lightingTier,
+      evaluateLightDirection(scene, reference, tolerance),
+    );
 
     final poseCandidates = _rootCause.collapse(
       poseAndFaceTier

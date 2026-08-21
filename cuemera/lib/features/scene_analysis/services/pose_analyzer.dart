@@ -88,6 +88,55 @@ class PoseAnalyzer {
     return acos(cosAngle.clamp(-1.0, 1.0)) * 180 / pi;
   }
 
+  double _distance(RawLandmark a, RawLandmark b) {
+    final dx = a.x - b.x;
+    final dy = a.y - b.y;
+    return sqrt(dx * dx + dy * dy);
+  }
+
+  bool _crossedMidline(
+    RawLandmark wrist,
+    RawLandmark ownShoulder,
+    RawLandmark otherShoulder,
+  ) {
+    final midX = (ownShoulder.x + otherShoulder.x) / 2;
+    final axisDir = (otherShoulder.x - ownShoulder.x).sign;
+    return (wrist.x - midX) * axisDir > 0;
+  }
+
+  String? _classifyArmPose({
+    required double? raiseAngle,
+    required double? elbowAngle,
+    required RawLandmark? wrist,
+    required RawLandmark? hip,
+    required RawLandmark? nose,
+    required RawLandmark? ownShoulder,
+    required RawLandmark? otherShoulder,
+    required double? torsoScale,
+  }) {
+    if (raiseAngle == null ||
+        wrist == null ||
+        hip == null ||
+        nose == null ||
+        ownShoulder == null ||
+        otherShoulder == null ||
+        torsoScale == null ||
+        torsoScale <= 0) {
+      return null;
+    }
+
+    if (raiseAngle < 25) return 'down';
+    if (_crossedMidline(wrist, ownShoulder, otherShoulder)) return 'crossed';
+
+    final wristToNoseRatio = _distance(wrist, nose) / torsoScale;
+    if (wristToNoseRatio < 0.6) return 'nearFace';
+
+    final wristToHipRatio = _distance(wrist, hip) / torsoScale;
+    if (wristToHipRatio < 0.4 && (elbowAngle ?? 180) < 130) return 'akimbo';
+
+    return 'raised';
+  }
+
   SubjectProfile analyzePose(
     dynamic mlkitPoseResult,
     SubjectProfile previous, {
@@ -145,6 +194,8 @@ class PoseAnalyzer {
         rightArmRaiseDegrees: rightArmRaiseMetric?.value,
         leftElbowAngleDegrees: leftElbowAngleMetric?.value,
         rightElbowAngleDegrees: rightElbowAngleMetric?.value,
+        leftArmPoseCategory: null,
+        rightArmPoseCategory: null,
         metricTemporalEligibility: {
           'bodyRatio': bodyRatioMetric?.isEligible ?? false,
           'shoulderAngleDegrees': shoulderAngleMetric?.isEligible ?? false,
@@ -241,6 +292,27 @@ class PoseAnalyzer {
         rightWrist,
       );
     }
+
+    final leftArmPoseCategory = _classifyArmPose(
+      raiseAngle: leftArmRaise,
+      elbowAngle: leftElbowAngle,
+      wrist: leftWrist,
+      hip: leftHip,
+      nose: nose,
+      ownShoulder: leftShoulder,
+      otherShoulder: rightShoulder,
+      torsoScale: torsoScale,
+    );
+    final rightArmPoseCategory = _classifyArmPose(
+      raiseAngle: rightArmRaise,
+      elbowAngle: rightElbowAngle,
+      wrist: rightWrist,
+      hip: rightHip,
+      nose: nose,
+      ownShoulder: rightShoulder,
+      otherShoulder: leftShoulder,
+      torsoScale: torsoScale,
+    );
 
     final metricConfidence = <String, double>{
       if (shoulderAngle != null)
@@ -349,6 +421,8 @@ class PoseAnalyzer {
       rightArmRaiseDegrees: rightArmRaiseMetric?.value,
       leftElbowAngleDegrees: leftElbowAngleMetric?.value,
       rightElbowAngleDegrees: rightElbowAngleMetric?.value,
+      leftArmPoseCategory: leftArmPoseCategory,
+      rightArmPoseCategory: rightArmPoseCategory,
       metricConfidence: metricConfidence.isEmpty ? null : metricConfidence,
       metricTemporalEligibility: {
         'bodyRatio': bodyRatioMetric?.isEligible ?? false,

@@ -11,6 +11,7 @@ import 'attribute_evaluation.dart';
 const bool _faceRollDirectionIsMirrored = false;
 const bool _shoulderBalanceDirectionIsMirrored = false;
 const bool _bodyYawDirectionIsMirrored = false;
+const bool _faceYawDirectionIsMirrored = false;
 
 AttributeEvaluation? evaluateShoulderAngle(
   SubjectProfile subject,
@@ -197,6 +198,70 @@ AttributeEvaluation? evaluateFaceRoll(
       confidence:
           1.0, // no landmark-confidence signal wired for this attribute yet
       controllability: kAttributeControllability[CoachingAttribute.faceRoll]!,
+    ),
+  );
+}
+
+AttributeEvaluation? evaluateFaceYaw(
+  SubjectProfile subject,
+  ReferenceProfile reference,
+  ToleranceSettings tolerance,
+) {
+  final subjectValue = subject.faceAngleDegrees;
+  final referenceValue = reference.faceAngleDegrees;
+  if (subjectValue == null || referenceValue == null) return null;
+
+  final deviation = ComparisonMath.circularDeviation(
+    subjectValue,
+    referenceValue,
+    360.0,
+  );
+  final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+  final normalizedSeverity = ComparisonMath.normalizedSeverity(
+    deviation,
+    ComparisonMath.maxDeviationForPose,
+  );
+  final thresholdForPose = ComparisonMath.thresholdForPose(
+    tolerance.poseTolerance,
+  );
+  final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
+    deviation,
+    thresholdForPose,
+  );
+
+  final subjectTurnedMoreTowardRight = _faceYawDirectionIsMirrored
+      ? signedDiff < 0
+      : signedDiff > 0;
+
+  final phrase = subjectTurnedMoreTowardRight
+      ? tieredPhrase(
+          normalizedSeverity,
+          mild: 'Turn your face slightly to your left',
+          moderate: 'Turn your face more to your left, like the reference',
+          strong:
+              "Turn your face a lot more to your left — you're turned well past the reference",
+        )
+      : tieredPhrase(
+          normalizedSeverity,
+          mild: 'Turn your face slightly to your right',
+          moderate: 'Turn your face more to your right, like the reference',
+          strong:
+              "Turn your face a lot more to your right — you're turned well past the reference",
+        );
+
+  return AttributeEvaluation(
+    deviationExceedsThreshold: deviationExceedsThreshold,
+    decision: CoachingDecision(
+      attribute: CoachingAttribute.faceYaw,
+      direction: subjectTurnedMoreTowardRight
+          ? CoachingDirection.left
+          : CoachingDirection.right,
+      tier: CoachingTier.poseAndFace,
+      normalizedSeverity: normalizedSeverity,
+      fallbackPhrase: phrase,
+      confidence:
+          1.0, // no landmark-confidence signal wired for this attribute yet
+      controllability: kAttributeControllability[CoachingAttribute.faceYaw]!,
     ),
   );
 }
@@ -613,6 +678,8 @@ AttributeEvaluation? evaluateRightArmPosition(
   referenceRaise: reference.rightArmRaiseDegrees,
   subjectElbow: subject.rightElbowAngleDegrees,
   referenceElbow: reference.rightElbowAngleDegrees,
+  subjectCategory: subject.rightArmPoseCategory,
+  referenceCategory: reference.rightArmPoseCategory,
   confidence: Confidence.minOf([
     Confidence.decisionConfidence(
       Confidence(subject.confidenceFor('rightArmRaiseDegrees')),
@@ -637,6 +704,8 @@ AttributeEvaluation? evaluateLeftArmPosition(
   referenceRaise: reference.leftArmRaiseDegrees,
   subjectElbow: subject.leftElbowAngleDegrees,
   referenceElbow: reference.leftElbowAngleDegrees,
+  subjectCategory: subject.leftArmPoseCategory,
+  referenceCategory: reference.leftArmPoseCategory,
   confidence: Confidence.minOf([
     Confidence.decisionConfidence(
       Confidence(subject.confidenceFor('leftArmRaiseDegrees')),
@@ -650,6 +719,14 @@ AttributeEvaluation? evaluateLeftArmPosition(
   tolerance: tolerance,
 );
 
+const Map<String, String> _armPoseCategoryInstruction = {
+  'down': 'let your {side} arm rest down naturally',
+  'crossed': 'cross your {side} arm in front of you',
+  'akimbo': 'put your {side} hand on your hip',
+  'nearFace': 'bring your {side} hand up near your face',
+  'raised': 'raise your {side} arm',
+};
+
 AttributeEvaluation? _evaluateArmPosition({
   required CoachingAttribute attribute,
   required String side,
@@ -657,9 +734,35 @@ AttributeEvaluation? _evaluateArmPosition({
   required double? referenceRaise,
   required double? subjectElbow,
   required double? referenceElbow,
+  required String? subjectCategory,
+  required String? referenceCategory,
   required double confidence,
   required ToleranceSettings tolerance,
 }) {
+  if (referenceCategory != null &&
+      subjectCategory != null &&
+      referenceCategory != subjectCategory) {
+    final template =
+        _armPoseCategoryInstruction[referenceCategory] ??
+        'match your {side} arm to the reference';
+    final instruction = template.replaceAll('{side}', side);
+    final fallbackPhrase =
+        '${instruction[0].toUpperCase()}${instruction.substring(1)}, like the reference';
+
+    return AttributeEvaluation(
+      deviationExceedsThreshold: true,
+      decision: CoachingDecision(
+        attribute: attribute,
+        direction: CoachingDirection.none,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: 1.0,
+        fallbackPhrase: fallbackPhrase,
+        confidence: confidence,
+        controllability: kAttributeControllability[attribute]!,
+      ),
+    );
+  }
+
   if (referenceRaise == null && referenceElbow == null) return null;
 
   final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);

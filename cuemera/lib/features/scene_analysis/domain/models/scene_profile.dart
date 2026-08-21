@@ -5,6 +5,7 @@ class SceneProfile {
     this.lightDirectionDegrees,
     required this.negativeSpaceScore,
     required this.symmetryScore,
+    this.subjectHorizontalPosition,
     required this.backgroundClutterCount,
     this.depthEstimate,
     this.liveWarmthScore,
@@ -15,6 +16,7 @@ class SceneProfile {
   final double? lightDirectionDegrees;
   final double negativeSpaceScore;
   final double symmetryScore;
+  final double? subjectHorizontalPosition;
   final int backgroundClutterCount;
   final double? depthEstimate;
   final double? liveWarmthScore;
@@ -27,6 +29,7 @@ class SceneProfile {
     Object? lightDirectionDegrees = _unset,
     double? negativeSpaceScore,
     double? symmetryScore,
+    Object? subjectHorizontalPosition = _unset,
     int? backgroundClutterCount,
     Object? depthEstimate = _unset,
     Object? liveWarmthScore = _unset,
@@ -39,6 +42,9 @@ class SceneProfile {
           : lightDirectionDegrees as double?,
       negativeSpaceScore: negativeSpaceScore ?? this.negativeSpaceScore,
       symmetryScore: symmetryScore ?? this.symmetryScore,
+      subjectHorizontalPosition: identical(subjectHorizontalPosition, _unset)
+          ? this.subjectHorizontalPosition
+          : subjectHorizontalPosition as double?,
       backgroundClutterCount:
           backgroundClutterCount ?? this.backgroundClutterCount,
       depthEstimate: identical(depthEstimate, _unset)

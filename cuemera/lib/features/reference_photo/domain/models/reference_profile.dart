@@ -16,16 +16,20 @@ class ReferenceProfile {
     this.rightArmRaiseDegrees,
     this.leftElbowAngleDegrees,
     this.rightElbowAngleDegrees,
+    this.leftArmPoseCategory,
+    this.rightArmPoseCategory,
     this.expression,
     this.smilingProbability,
     this.leftEyeOpenProbability,
     this.rightEyeOpenProbability,
     this.negativeSpaceScore,
     this.symmetryScore,
+    this.subjectHorizontalPosition,
     this.backgroundClutterCount,
     this.dominantHue,
     this.warmthScore,
     this.overallBrightness,
+    this.lightDirectionDegrees,
     this.mouthOpenRatio,
     this.eyeOpenRatio,
     this.poseLandmarkPoints,
@@ -62,16 +66,21 @@ class ReferenceProfile {
   final double? leftElbowAngleDegrees;
   final double? rightElbowAngleDegrees;
 
+  final String? leftArmPoseCategory;
+  final String? rightArmPoseCategory;
+
   final String? expression;
   final double? smilingProbability;
   final double? leftEyeOpenProbability;
   final double? rightEyeOpenProbability;
   final double? negativeSpaceScore;
   final double? symmetryScore;
+  final double? subjectHorizontalPosition;
   final int? backgroundClutterCount;
   final double? dominantHue;
   final double? warmthScore;
   final double? overallBrightness;
+  final double? lightDirectionDegrees;
   final double? mouthOpenRatio;
   final double? eyeOpenRatio;
   final List<Offset?>? poseLandmarkPoints;
@@ -111,16 +120,20 @@ class ReferenceProfile {
     double? rightArmRaiseDegrees,
     double? leftElbowAngleDegrees,
     double? rightElbowAngleDegrees,
+    String? leftArmPoseCategory,
+    String? rightArmPoseCategory,
     String? expression,
     double? smilingProbability,
     double? leftEyeOpenProbability,
     double? rightEyeOpenProbability,
     double? negativeSpaceScore,
     double? symmetryScore,
+    double? subjectHorizontalPosition,
     int? backgroundClutterCount,
     double? dominantHue,
     double? warmthScore,
     double? overallBrightness,
+    double? lightDirectionDegrees,
     double? mouthOpenRatio,
     double? eyeOpenRatio,
     List<Offset?>? poseLandmarkPoints,
@@ -156,6 +169,8 @@ class ReferenceProfile {
           leftElbowAngleDegrees ?? this.leftElbowAngleDegrees,
       rightElbowAngleDegrees:
           rightElbowAngleDegrees ?? this.rightElbowAngleDegrees,
+      leftArmPoseCategory: leftArmPoseCategory ?? this.leftArmPoseCategory,
+      rightArmPoseCategory: rightArmPoseCategory ?? this.rightArmPoseCategory,
       expression: expression ?? this.expression,
       smilingProbability: smilingProbability ?? this.smilingProbability,
       leftEyeOpenProbability:
@@ -164,11 +179,15 @@ class ReferenceProfile {
           rightEyeOpenProbability ?? this.rightEyeOpenProbability,
       negativeSpaceScore: negativeSpaceScore ?? this.negativeSpaceScore,
       symmetryScore: symmetryScore ?? this.symmetryScore,
+      subjectHorizontalPosition:
+          subjectHorizontalPosition ?? this.subjectHorizontalPosition,
       backgroundClutterCount:
           backgroundClutterCount ?? this.backgroundClutterCount,
       dominantHue: dominantHue ?? this.dominantHue,
       warmthScore: warmthScore ?? this.warmthScore,
       overallBrightness: overallBrightness ?? this.overallBrightness,
+      lightDirectionDegrees:
+          lightDirectionDegrees ?? this.lightDirectionDegrees,
       mouthOpenRatio: mouthOpenRatio ?? this.mouthOpenRatio,
       eyeOpenRatio: eyeOpenRatio ?? this.eyeOpenRatio,
       poseLandmarkPoints: poseLandmarkPoints ?? this.poseLandmarkPoints,
