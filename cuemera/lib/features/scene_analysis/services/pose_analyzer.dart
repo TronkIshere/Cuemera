@@ -30,11 +30,19 @@ class PoseAnalyzer {
   late final CircularStabilizer _bodyYawStabilizer = CircularStabilizer(
     _config,
   );
+  late final TemporalStabilizer _leftArmRaiseStabilizer = TemporalStabilizer(
+    _config,
+  );
+  late final TemporalStabilizer _rightArmRaiseStabilizer = TemporalStabilizer(
+    _config,
+  );
+  late final TemporalStabilizer _leftElbowAngleStabilizer = TemporalStabilizer(
+    _config,
+  );
+  late final TemporalStabilizer _rightElbowAngleStabilizer = TemporalStabilizer(
+    _config,
+  );
 
-  /// Genuinely-lost detection: temporal_stabilizer.dart returns
-  /// temporalConfidence 0 exactly when raw was null AND the hold-on-loss
-  /// window has fully elapsed — everything else (a real value, or a raw
-  /// null still within the hold window) should surface a value.
   StabilizedMetric? _resolveLinear(
     TemporalStabilizer stabilizer,
     double? raw,
@@ -64,6 +72,22 @@ class PoseAnalyzer {
     return lowest;
   }
 
+  double? _angleBetweenDegrees(
+    RawLandmark rayA,
+    RawLandmark vertex,
+    RawLandmark rayB,
+  ) {
+    final v1x = rayA.x - vertex.x;
+    final v1y = rayA.y - vertex.y;
+    final v2x = rayB.x - vertex.x;
+    final v2y = rayB.y - vertex.y;
+    final mag1 = sqrt(v1x * v1x + v1y * v1y);
+    final mag2 = sqrt(v2x * v2x + v2y * v2y);
+    if (mag1 == 0 || mag2 == 0) return null;
+    final cosAngle = ((v1x * v2x) + (v1y * v2y)) / (mag1 * mag2);
+    return acos(cosAngle.clamp(-1.0, 1.0)) * 180 / pi;
+  }
+
   SubjectProfile analyzePose(
     dynamic mlkitPoseResult,
     SubjectProfile previous, {
@@ -90,6 +114,26 @@ class PoseAnalyzer {
         at,
       );
       final bodyYawMetric = _resolveCircular(_bodyYawStabilizer, null, at);
+      final leftArmRaiseMetric = _resolveLinear(
+        _leftArmRaiseStabilizer,
+        null,
+        at,
+      );
+      final rightArmRaiseMetric = _resolveLinear(
+        _rightArmRaiseStabilizer,
+        null,
+        at,
+      );
+      final leftElbowAngleMetric = _resolveLinear(
+        _leftElbowAngleStabilizer,
+        null,
+        at,
+      );
+      final rightElbowAngleMetric = _resolveLinear(
+        _rightElbowAngleStabilizer,
+        null,
+        at,
+      );
 
       return previous.copyWith(
         bodyRatio: bodyRatioMetric?.value,
@@ -97,12 +141,20 @@ class PoseAnalyzer {
         shoulderBalanceRatio: shoulderBalanceMetric?.value,
         shoulderSpanRatio: shoulderSpanMetric?.value,
         bodyYawEstimate: bodyYawMetric?.value,
+        leftArmRaiseDegrees: leftArmRaiseMetric?.value,
+        rightArmRaiseDegrees: rightArmRaiseMetric?.value,
+        leftElbowAngleDegrees: leftElbowAngleMetric?.value,
+        rightElbowAngleDegrees: rightElbowAngleMetric?.value,
         metricTemporalEligibility: {
           'bodyRatio': bodyRatioMetric?.isEligible ?? false,
           'shoulderAngleDegrees': shoulderAngleMetric?.isEligible ?? false,
           'shoulderBalanceRatio': shoulderBalanceMetric?.isEligible ?? false,
           'shoulderSpanRatio': shoulderSpanMetric?.isEligible ?? false,
           'bodyYawEstimate': bodyYawMetric?.isEligible ?? false,
+          'leftArmRaiseDegrees': leftArmRaiseMetric?.isEligible ?? false,
+          'rightArmRaiseDegrees': rightArmRaiseMetric?.isEligible ?? false,
+          'leftElbowAngleDegrees': leftElbowAngleMetric?.isEligible ?? false,
+          'rightElbowAngleDegrees': rightElbowAngleMetric?.isEligible ?? false,
         },
       );
     }
@@ -124,9 +176,6 @@ class PoseAnalyzer {
       shoulderAngle = atan2(dy, dx) * 180 / pi;
       torsoScale = sqrt(dx * dx + dy * dy);
 
-      // Previously missing entirely on the live path — mirrors
-      // ReferenceImageAnalyzer._derivePose()'s formulas so the live and
-      // reference-photo sides compute these identically.
       shoulderBalanceRatio = torsoScale > 0
           ? (leftShoulder.y - rightShoulder.y) / torsoScale
           : null;
@@ -167,6 +216,32 @@ class PoseAnalyzer {
       }
     }
 
+    final leftElbow = gate.landmark(PoseLandmarkType.leftElbow);
+    final rightElbow = gate.landmark(PoseLandmarkType.rightElbow);
+    final leftWrist = gate.landmark(PoseLandmarkType.leftWrist);
+    final rightWrist = gate.landmark(PoseLandmarkType.rightWrist);
+
+    double? leftArmRaise;
+    if (leftShoulder != null && leftElbow != null && leftHip != null) {
+      leftArmRaise = _angleBetweenDegrees(leftHip, leftShoulder, leftElbow);
+    }
+    double? rightArmRaise;
+    if (rightShoulder != null && rightElbow != null && rightHip != null) {
+      rightArmRaise = _angleBetweenDegrees(rightHip, rightShoulder, rightElbow);
+    }
+    double? leftElbowAngle;
+    if (leftShoulder != null && leftElbow != null && leftWrist != null) {
+      leftElbowAngle = _angleBetweenDegrees(leftShoulder, leftElbow, leftWrist);
+    }
+    double? rightElbowAngle;
+    if (rightShoulder != null && rightElbow != null && rightWrist != null) {
+      rightElbowAngle = _angleBetweenDegrees(
+        rightShoulder,
+        rightElbow,
+        rightWrist,
+      );
+    }
+
     final metricConfidence = <String, double>{
       if (shoulderAngle != null)
         'shoulderAngleDegrees': _minConfidence(gate, [
@@ -196,6 +271,30 @@ class PoseAnalyzer {
           PoseLandmarkType.leftHip,
           PoseLandmarkType.leftAnkle,
         ]),
+      if (leftArmRaise != null)
+        'leftArmRaiseDegrees': _minConfidence(gate, [
+          PoseLandmarkType.leftHip,
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.leftElbow,
+        ]),
+      if (rightArmRaise != null)
+        'rightArmRaiseDegrees': _minConfidence(gate, [
+          PoseLandmarkType.rightHip,
+          PoseLandmarkType.rightShoulder,
+          PoseLandmarkType.rightElbow,
+        ]),
+      if (leftElbowAngle != null)
+        'leftElbowAngleDegrees': _minConfidence(gate, [
+          PoseLandmarkType.leftShoulder,
+          PoseLandmarkType.leftElbow,
+          PoseLandmarkType.leftWrist,
+        ]),
+      if (rightElbowAngle != null)
+        'rightElbowAngleDegrees': _minConfidence(gate, [
+          PoseLandmarkType.rightShoulder,
+          PoseLandmarkType.rightElbow,
+          PoseLandmarkType.rightWrist,
+        ]),
     };
 
     final bodyRatioMetric = _resolveLinear(_bodyRatioStabilizer, bodyRatio, at);
@@ -219,6 +318,26 @@ class PoseAnalyzer {
       bodyYawEstimate,
       at,
     );
+    final leftArmRaiseMetric = _resolveLinear(
+      _leftArmRaiseStabilizer,
+      leftArmRaise,
+      at,
+    );
+    final rightArmRaiseMetric = _resolveLinear(
+      _rightArmRaiseStabilizer,
+      rightArmRaise,
+      at,
+    );
+    final leftElbowAngleMetric = _resolveLinear(
+      _leftElbowAngleStabilizer,
+      leftElbowAngle,
+      at,
+    );
+    final rightElbowAngleMetric = _resolveLinear(
+      _rightElbowAngleStabilizer,
+      rightElbowAngle,
+      at,
+    );
 
     return previous.copyWith(
       bodyRatio: bodyRatioMetric?.value,
@@ -226,6 +345,10 @@ class PoseAnalyzer {
       shoulderBalanceRatio: shoulderBalanceMetric?.value,
       shoulderSpanRatio: shoulderSpanMetric?.value,
       bodyYawEstimate: bodyYawMetric?.value,
+      leftArmRaiseDegrees: leftArmRaiseMetric?.value,
+      rightArmRaiseDegrees: rightArmRaiseMetric?.value,
+      leftElbowAngleDegrees: leftElbowAngleMetric?.value,
+      rightElbowAngleDegrees: rightElbowAngleMetric?.value,
       metricConfidence: metricConfidence.isEmpty ? null : metricConfidence,
       metricTemporalEligibility: {
         'bodyRatio': bodyRatioMetric?.isEligible ?? false,
@@ -233,6 +356,10 @@ class PoseAnalyzer {
         'shoulderBalanceRatio': shoulderBalanceMetric?.isEligible ?? false,
         'shoulderSpanRatio': shoulderSpanMetric?.isEligible ?? false,
         'bodyYawEstimate': bodyYawMetric?.isEligible ?? false,
+        'leftArmRaiseDegrees': leftArmRaiseMetric?.isEligible ?? false,
+        'rightArmRaiseDegrees': rightArmRaiseMetric?.isEligible ?? false,
+        'leftElbowAngleDegrees': leftElbowAngleMetric?.isEligible ?? false,
+        'rightElbowAngleDegrees': rightElbowAngleMetric?.isEligible ?? false,
       },
     );
   }

@@ -11,6 +11,10 @@ class SubjectProfile {
     this.shoulderBalanceRatio,
     this.shoulderSpanRatio,
     this.bodyYawEstimate,
+    this.leftArmRaiseDegrees,
+    this.rightArmRaiseDegrees,
+    this.leftElbowAngleDegrees,
+    this.rightElbowAngleDegrees,
     this.eyesOpen,
     this.expression,
     this.metricConfidence,
@@ -33,6 +37,11 @@ class SubjectProfile {
   final double? shoulderSpanRatio;
 
   final double? bodyYawEstimate;
+
+  final double? leftArmRaiseDegrees;
+  final double? rightArmRaiseDegrees;
+  final double? leftElbowAngleDegrees;
+  final double? rightElbowAngleDegrees;
 
   final bool? eyesOpen;
   final String? expression;
@@ -61,6 +70,10 @@ class SubjectProfile {
     Object? shoulderBalanceRatio = _unset,
     Object? shoulderSpanRatio = _unset,
     Object? bodyYawEstimate = _unset,
+    Object? leftArmRaiseDegrees = _unset,
+    Object? rightArmRaiseDegrees = _unset,
+    Object? leftElbowAngleDegrees = _unset,
+    Object? rightElbowAngleDegrees = _unset,
     Object? eyesOpen = _unset,
     Object? expression = _unset,
     Object? metricConfidence = _unset,
@@ -99,6 +112,18 @@ class SubjectProfile {
       bodyYawEstimate: identical(bodyYawEstimate, _unset)
           ? this.bodyYawEstimate
           : bodyYawEstimate as double?,
+      leftArmRaiseDegrees: identical(leftArmRaiseDegrees, _unset)
+          ? this.leftArmRaiseDegrees
+          : leftArmRaiseDegrees as double?,
+      rightArmRaiseDegrees: identical(rightArmRaiseDegrees, _unset)
+          ? this.rightArmRaiseDegrees
+          : rightArmRaiseDegrees as double?,
+      leftElbowAngleDegrees: identical(leftElbowAngleDegrees, _unset)
+          ? this.leftElbowAngleDegrees
+          : leftElbowAngleDegrees as double?,
+      rightElbowAngleDegrees: identical(rightElbowAngleDegrees, _unset)
+          ? this.rightElbowAngleDegrees
+          : rightElbowAngleDegrees as double?,
       eyesOpen: identical(eyesOpen, _unset) ? this.eyesOpen : eyesOpen as bool?,
       expression: identical(expression, _unset)
           ? this.expression

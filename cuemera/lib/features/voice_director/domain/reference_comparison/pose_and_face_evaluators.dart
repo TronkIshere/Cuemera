@@ -601,3 +601,132 @@ AttributeEvaluation? evaluateExpression(
     ),
   );
 }
+
+AttributeEvaluation? evaluateRightArmPosition(
+  SubjectProfile subject,
+  ReferenceProfile reference,
+  ToleranceSettings tolerance,
+) => _evaluateArmPosition(
+  attribute: CoachingAttribute.rightArmPosition,
+  side: 'right',
+  subjectRaise: subject.rightArmRaiseDegrees,
+  referenceRaise: reference.rightArmRaiseDegrees,
+  subjectElbow: subject.rightElbowAngleDegrees,
+  referenceElbow: reference.rightElbowAngleDegrees,
+  confidence: Confidence.minOf([
+    Confidence.decisionConfidence(
+      Confidence(subject.confidenceFor('rightArmRaiseDegrees')),
+      Confidence(reference.confidenceFor('rightArmRaiseDegrees')),
+    ),
+    Confidence.decisionConfidence(
+      Confidence(subject.confidenceFor('rightElbowAngleDegrees')),
+      Confidence(reference.confidenceFor('rightElbowAngleDegrees')),
+    ),
+  ]).value,
+  tolerance: tolerance,
+);
+
+AttributeEvaluation? evaluateLeftArmPosition(
+  SubjectProfile subject,
+  ReferenceProfile reference,
+  ToleranceSettings tolerance,
+) => _evaluateArmPosition(
+  attribute: CoachingAttribute.leftArmPosition,
+  side: 'left',
+  subjectRaise: subject.leftArmRaiseDegrees,
+  referenceRaise: reference.leftArmRaiseDegrees,
+  subjectElbow: subject.leftElbowAngleDegrees,
+  referenceElbow: reference.leftElbowAngleDegrees,
+  confidence: Confidence.minOf([
+    Confidence.decisionConfidence(
+      Confidence(subject.confidenceFor('leftArmRaiseDegrees')),
+      Confidence(reference.confidenceFor('leftArmRaiseDegrees')),
+    ),
+    Confidence.decisionConfidence(
+      Confidence(subject.confidenceFor('leftElbowAngleDegrees')),
+      Confidence(reference.confidenceFor('leftElbowAngleDegrees')),
+    ),
+  ]).value,
+  tolerance: tolerance,
+);
+
+AttributeEvaluation? _evaluateArmPosition({
+  required CoachingAttribute attribute,
+  required String side,
+  required double? subjectRaise,
+  required double? referenceRaise,
+  required double? subjectElbow,
+  required double? referenceElbow,
+  required double confidence,
+  required ToleranceSettings tolerance,
+}) {
+  if (referenceRaise == null && referenceElbow == null) return null;
+
+  final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+
+  double? raiseDeviation;
+  if (subjectRaise != null && referenceRaise != null) {
+    raiseDeviation = ComparisonMath.deviation(subjectRaise, referenceRaise);
+  }
+  double? elbowDeviation;
+  if (subjectElbow != null && referenceElbow != null) {
+    elbowDeviation = ComparisonMath.deviation(subjectElbow, referenceElbow);
+  }
+  if (raiseDeviation == null && elbowDeviation == null) return null;
+
+  final normalizedSeverity = ComparisonMath.normalizedSeverity(
+    [
+      raiseDeviation,
+      elbowDeviation,
+    ].whereType<double>().reduce((a, b) => a > b ? a : b),
+    ComparisonMath.maxDeviationForPose,
+  );
+
+  final raiseExceeds =
+      raiseDeviation != null &&
+      ComparisonMath.exceedsThreshold(raiseDeviation, threshold);
+  final elbowExceeds =
+      elbowDeviation != null &&
+      ComparisonMath.exceedsThreshold(elbowDeviation, threshold);
+
+  final raiseInstruction = raiseExceeds
+      ? (subjectRaise! < referenceRaise!
+            ? 'raise your $side arm to about ${referenceRaise.round()}°'
+            : 'lower your $side arm to about ${referenceRaise.round()}°')
+      : null;
+  final elbowInstruction = elbowExceeds
+      ? (subjectElbow! > referenceElbow!
+            ? 'bend your $side elbow in more'
+            : 'straighten your $side elbow a bit')
+      : null;
+
+  final instructions = [
+    raiseInstruction,
+    elbowInstruction,
+  ].whereType<String>().toList();
+  final combined = instructions.isEmpty
+      ? 'match your $side arm to the reference'
+      : '${instructions.join(', and ')}, like the reference';
+  final fallbackPhrase = '${combined[0].toUpperCase()}${combined.substring(1)}';
+
+  final direction = (raiseDeviation ?? -1) >= (elbowDeviation ?? -1)
+      ? (raiseExceeds && subjectRaise! < referenceRaise!
+            ? CoachingDirection.increase
+            : CoachingDirection.decrease)
+      : (elbowExceeds && subjectElbow! > referenceElbow!
+            ? CoachingDirection.decrease
+            : CoachingDirection.increase);
+
+  return AttributeEvaluation(
+    deviationExceedsThreshold: raiseExceeds || elbowExceeds,
+    decision: CoachingDecision(
+      attribute: attribute,
+      direction: direction,
+      tier: CoachingTier.poseAndFace,
+      normalizedSeverity: normalizedSeverity,
+      fallbackPhrase: fallbackPhrase,
+      confidence: confidence,
+      controllability: kAttributeControllability[attribute]!,
+    ),
+  );
+}

@@ -12,6 +12,10 @@ class ReferenceProfile {
     this.shoulderBalanceRatio,
     this.shoulderSpanRatio,
     this.bodyYawEstimate,
+    this.leftArmRaiseDegrees,
+    this.rightArmRaiseDegrees,
+    this.leftElbowAngleDegrees,
+    this.rightElbowAngleDegrees,
     this.expression,
     this.smilingProbability,
     this.leftEyeOpenProbability,
@@ -53,6 +57,11 @@ class ReferenceProfile {
   final double? shoulderSpanRatio;
   final double? bodyYawEstimate;
 
+  final double? leftArmRaiseDegrees;
+  final double? rightArmRaiseDegrees;
+  final double? leftElbowAngleDegrees;
+  final double? rightElbowAngleDegrees;
+
   final String? expression;
   final double? smilingProbability;
   final double? leftEyeOpenProbability;
@@ -84,10 +93,6 @@ class ReferenceProfile {
   final double? imageWidth;
   final double? imageHeight;
 
-  /// Per-metric confidence in [0, 1], keyed by field name — same idiom as
-  /// SubjectProfile.metricConfidence, populated by
-  /// ReferenceImageAnalyzer from core/pose/landmark_gate.dart's per-landmark
-  /// trust. A metric with no entry has no known confidence signal yet.
   final Map<String, double>? metricConfidence;
 
   double confidenceFor(String metric) => metricConfidence?[metric] ?? 1.0;
@@ -102,6 +107,10 @@ class ReferenceProfile {
     double? shoulderBalanceRatio,
     double? shoulderSpanRatio,
     double? bodyYawEstimate,
+    double? leftArmRaiseDegrees,
+    double? rightArmRaiseDegrees,
+    double? leftElbowAngleDegrees,
+    double? rightElbowAngleDegrees,
     String? expression,
     double? smilingProbability,
     double? leftEyeOpenProbability,
@@ -141,6 +150,12 @@ class ReferenceProfile {
       shoulderBalanceRatio: shoulderBalanceRatio ?? this.shoulderBalanceRatio,
       shoulderSpanRatio: shoulderSpanRatio ?? this.shoulderSpanRatio,
       bodyYawEstimate: bodyYawEstimate ?? this.bodyYawEstimate,
+      leftArmRaiseDegrees: leftArmRaiseDegrees ?? this.leftArmRaiseDegrees,
+      rightArmRaiseDegrees: rightArmRaiseDegrees ?? this.rightArmRaiseDegrees,
+      leftElbowAngleDegrees:
+          leftElbowAngleDegrees ?? this.leftElbowAngleDegrees,
+      rightElbowAngleDegrees:
+          rightElbowAngleDegrees ?? this.rightElbowAngleDegrees,
       expression: expression ?? this.expression,
       smilingProbability: smilingProbability ?? this.smilingProbability,
       leftEyeOpenProbability:

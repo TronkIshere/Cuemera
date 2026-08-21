@@ -21,6 +21,8 @@ enum CoachingAttribute {
   shoulderBalance,
   shoulderSpan,
   bodyYaw,
+  rightArmPosition,
+  leftArmPosition,
 }
 
 enum CoachingDirection { increase, decrease, left, right, none }

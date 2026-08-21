@@ -88,6 +88,14 @@ class ReferenceComparisonEngine {
       poseAndFaceTier,
       evaluateBodyYaw(subject, reference, tolerance),
     );
+    addIfPresent(
+      poseAndFaceTier,
+      evaluateRightArmPosition(subject, reference, tolerance),
+    );
+    addIfPresent(
+      poseAndFaceTier,
+      evaluateLeftArmPosition(subject, reference, tolerance),
+    );
 
     addIfPresent(
       compositionTier,

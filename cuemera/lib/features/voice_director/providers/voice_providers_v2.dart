@@ -63,6 +63,9 @@ double? currentMeasurementFor(
       return subject.shoulderSpanRatio;
     case CoachingAttribute.bodyYaw:
       return subject.bodyYawEstimate;
+    case CoachingAttribute.rightArmPosition:
+    case CoachingAttribute.leftArmPosition:
+      return null;
     case CoachingAttribute.negativeSpace:
       return scene.negativeSpaceScore;
     case CoachingAttribute.symmetry:
@@ -105,6 +108,9 @@ double? referenceMeasurementFor(
       return reference.shoulderSpanRatio;
     case CoachingAttribute.bodyYaw:
       return reference.bodyYawEstimate;
+    case CoachingAttribute.rightArmPosition:
+    case CoachingAttribute.leftArmPosition:
+      return null;
     case CoachingAttribute.negativeSpace:
       return reference.negativeSpaceScore;
     case CoachingAttribute.symmetry:
@@ -135,6 +141,12 @@ bool attributeTemporallyEligible(
       return subject.temporallyEligibleFor('bodyYawEstimate');
     case CoachingAttribute.bodyRatio:
       return subject.temporallyEligibleFor('bodyRatio');
+    case CoachingAttribute.rightArmPosition:
+      return subject.temporallyEligibleFor('rightArmRaiseDegrees') &&
+          subject.temporallyEligibleFor('rightElbowAngleDegrees');
+    case CoachingAttribute.leftArmPosition:
+      return subject.temporallyEligibleFor('leftArmRaiseDegrees') &&
+          subject.temporallyEligibleFor('leftElbowAngleDegrees');
     default:
       return true;
   }
