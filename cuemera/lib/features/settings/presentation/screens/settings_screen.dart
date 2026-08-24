@@ -1,4 +1,5 @@
 // features/settings/presentation/screens/settings_screen.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +11,7 @@ import '../../../../core/services/theme_preference_service.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../providers/ai_coaching_providers.dart';
 import '../../providers/coaching_v2_settings_provider.dart';
+import '../../providers/debug_overlay_settings_provider.dart';
 import '../../providers/live_detection_settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -29,6 +31,7 @@ class SettingsScreen extends ConsumerWidget {
     final coachingV2Notifier = ref.read(coachingV2SettingsProvider.notifier);
 
     final accurateLiveDetection = ref.watch(accurateLiveDetectionProvider);
+    final debugPerfOverlayEnabled = ref.watch(debugPerfOverlayEnabledProvider);
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -241,6 +244,49 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (kDebugMode) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _SettingsCard(
+                    colors: colors,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Debug Performance Overlay',
+                                style: AppTypography.body(
+                                  colors,
+                                ).copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Shows FPS, tracking progress, and auto-'
+                                'capture condition breakdown on the camera '
+                                'screen. Debug builds only.',
+                                style: AppTypography.caption(
+                                  colors,
+                                ).copyWith(color: colors.textMuted),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: debugPerfOverlayEnabled,
+                          onChanged: (value) =>
+                              ref
+                                      .read(
+                                        debugPerfOverlayEnabledProvider
+                                            .notifier,
+                                      )
+                                      .state =
+                                  value,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

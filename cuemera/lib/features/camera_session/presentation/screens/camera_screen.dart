@@ -27,6 +27,7 @@ import '../../../reference_photo/presentation/widgets/reference_picker_sheet.dar
 import '../../../reference_photo/providers/reference_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
+import '../../../settings/providers/debug_overlay_settings_provider.dart';
 import '../../../settings/providers/live_detection_settings_provider.dart';
 import '../../../voice_director/providers/voice_providers.dart';
 import '../widgets/camera_preview_layer.dart';
@@ -545,7 +546,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           onTapUp: _onTapUp,
           hasCaptured: _hasCaptured,
         ),
-        if (kDebugMode) DebugPerfOverlay(key: _debugPerfOverlayKey),
+        if (kDebugMode && ref.watch(debugPerfOverlayEnabledProvider))
+          DebugPerfOverlay(key: _debugPerfOverlayKey),
         if (mlKitUnavailable)
           Positioned(
             top: 0,
