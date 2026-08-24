@@ -13,6 +13,8 @@ import '../../../../core/services/sherpa_tts_service.dart';
 import '../../../../core/services/theme_preference_service.dart';
 import '../../../../shared/widgets/app_background.dart';
 import '../../../../shared/widgets/primary_button.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../auth/presentation/screens/login_screen.dart';
 import '../../../home/presentation/screens/home_screen.dart';
 
 final splashInitProvider = FutureProvider.autoDispose<void>((ref) async {
@@ -44,8 +46,12 @@ class SplashScreen extends ConsumerWidget {
 
     ref.listen<AsyncValue<void>>(splashInitProvider, (previous, next) {
       next.whenData((_) {
+        final isSignedIn = ref.read(currentUserProvider) != null;
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(
+            builder: (_) =>
+                isSignedIn ? const HomeScreen() : const LoginScreen(),
+          ),
         );
       });
     });

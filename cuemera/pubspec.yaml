@@ -58,6 +58,9 @@ dependencies:
   # App / Build
   flutter_launcher_icons: ^0.14.1
 
+  # Database
+  supabase_flutter: ^2.8.06
+
 flutter_launcher_icons:
   android: true
   ios: true

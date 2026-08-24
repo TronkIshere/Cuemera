@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/services/error_reporting_service.dart';
+import 'core/services/supabase_service.dart';
 import 'core/services/theme_preference_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/splash/presentation/screens/splash_screen.dart';
@@ -25,8 +26,9 @@ void main() {
   };
 
   runZonedGuarded(
-    () {
+    () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await SupabaseService.initialize();
       runApp(const ProviderScope(child: MyApp()));
     },
     (error, stackTrace) {
