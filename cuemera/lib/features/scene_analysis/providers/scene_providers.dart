@@ -50,9 +50,19 @@ final trackingEngineProvider = Provider<TrackingEngine>((ref) {
   return TrackingEngine(thresholds: thresholds);
 });
 
-void resetLiveAnalyzers(Ref ref) {
+void resetLiveAnalyzers(WidgetRef ref) {
   ref.read(poseAnalyzerProvider).reset();
   ref.read(faceAnalyzerProvider).reset();
+  ref.read(trackingEngineProvider).reset();
+  ref.read(subjectProfileProvider.notifier).state = SubjectProfile(
+    timestamp: DateTime.now(),
+  );
+  ref.read(sceneProfileProvider.notifier).state = const SceneProfile(
+    brightness: 0.5,
+    negativeSpaceScore: 0.0,
+    symmetryScore: 0.5,
+    backgroundClutterCount: 0,
+  );
 }
 
 final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {

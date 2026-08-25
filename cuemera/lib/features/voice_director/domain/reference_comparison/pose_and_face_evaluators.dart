@@ -8,11 +8,6 @@ import '../../../reference_photo/domain/models/tolerance_settings.dart';
 import '../../../scene_analysis/domain/models/subject_profile.dart';
 import 'attribute_evaluation.dart';
 
-const bool _faceRollDirectionIsMirrored = false;
-const bool _shoulderBalanceDirectionIsMirrored = false;
-const bool _bodyYawDirectionIsMirrored = false;
-const bool _faceYawDirectionIsMirrored = false;
-
 AttributeEvaluation? evaluateShoulderAngle(
   SubjectProfile subject,
   ReferenceProfile reference,
@@ -27,7 +22,11 @@ AttributeEvaluation? evaluateShoulderAngle(
     referenceValue,
     360.0,
   );
-  final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+  final signedDiff = ComparisonMath.signedCircularDiff(
+    subjectValue,
+    referenceValue,
+    360.0,
+  );
   final isSubjectGreater = signedDiff > 0;
   final normalizedSeverity = ComparisonMath.normalizedSeverity(
     deviation,
@@ -91,7 +90,11 @@ AttributeEvaluation? evaluateFacePitch(
     referenceValue,
     360.0,
   );
-  final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+  final signedDiff = ComparisonMath.signedCircularDiff(
+    subjectValue,
+    referenceValue,
+    360.0,
+  );
   final isSubjectGreater = signedDiff > 0;
   final normalizedSeverity = ComparisonMath.normalizedSeverity(
     deviation,
@@ -131,8 +134,10 @@ AttributeEvaluation? evaluateFacePitch(
       tier: CoachingTier.poseAndFace,
       normalizedSeverity: normalizedSeverity,
       fallbackPhrase: phrase,
-      confidence:
-          1.0, // no landmark-confidence signal wired for this attribute yet
+      confidence: Confidence.decisionConfidence(
+        Confidence(subject.confidenceFor('faceAngleXDegrees')),
+        Confidence(reference.confidenceFor('faceAngleXDegrees')),
+      ).value,
       controllability: kAttributeControllability[CoachingAttribute.facePitch]!,
     ),
   );
@@ -142,6 +147,7 @@ AttributeEvaluation? evaluateFaceRoll(
   SubjectProfile subject,
   ReferenceProfile reference,
   ToleranceSettings tolerance,
+  bool isFrontCamera,
 ) {
   final subjectValue = subject.faceAngleZDegrees;
   final referenceValue = reference.faceAngleZDegrees;
@@ -152,7 +158,11 @@ AttributeEvaluation? evaluateFaceRoll(
     referenceValue,
     360.0,
   );
-  final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+  final signedDiff = ComparisonMath.signedCircularDiff(
+    subjectValue,
+    referenceValue,
+    360.0,
+  );
   final normalizedSeverity = ComparisonMath.normalizedSeverity(
     deviation,
     ComparisonMath.maxDeviationForPose,
@@ -165,7 +175,7 @@ AttributeEvaluation? evaluateFaceRoll(
     thresholdForPose,
   );
 
-  final subjectTiltedMoreTowardRight = _faceRollDirectionIsMirrored
+  final subjectTiltedMoreTowardRight = isFrontCamera
       ? signedDiff < 0
       : signedDiff > 0;
 
@@ -195,8 +205,10 @@ AttributeEvaluation? evaluateFaceRoll(
       tier: CoachingTier.poseAndFace,
       normalizedSeverity: normalizedSeverity,
       fallbackPhrase: phrase,
-      confidence:
-          1.0, // no landmark-confidence signal wired for this attribute yet
+      confidence: Confidence.decisionConfidence(
+        Confidence(subject.confidenceFor('faceAngleZDegrees')),
+        Confidence(reference.confidenceFor('faceAngleZDegrees')),
+      ).value,
       controllability: kAttributeControllability[CoachingAttribute.faceRoll]!,
     ),
   );
@@ -206,6 +218,7 @@ AttributeEvaluation? evaluateFaceYaw(
   SubjectProfile subject,
   ReferenceProfile reference,
   ToleranceSettings tolerance,
+  bool isFrontCamera,
 ) {
   final subjectValue = subject.faceAngleDegrees;
   final referenceValue = reference.faceAngleDegrees;
@@ -216,7 +229,11 @@ AttributeEvaluation? evaluateFaceYaw(
     referenceValue,
     360.0,
   );
-  final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+  final signedDiff = ComparisonMath.signedCircularDiff(
+    subjectValue,
+    referenceValue,
+    360.0,
+  );
   final normalizedSeverity = ComparisonMath.normalizedSeverity(
     deviation,
     ComparisonMath.maxDeviationForPose,
@@ -229,7 +246,7 @@ AttributeEvaluation? evaluateFaceYaw(
     thresholdForPose,
   );
 
-  final subjectTurnedMoreTowardRight = _faceYawDirectionIsMirrored
+  final subjectTurnedMoreTowardRight = isFrontCamera
       ? signedDiff < 0
       : signedDiff > 0;
 
@@ -259,8 +276,10 @@ AttributeEvaluation? evaluateFaceYaw(
       tier: CoachingTier.poseAndFace,
       normalizedSeverity: normalizedSeverity,
       fallbackPhrase: phrase,
-      confidence:
-          1.0, // no landmark-confidence signal wired for this attribute yet
+      confidence: Confidence.decisionConfidence(
+        Confidence(subject.confidenceFor('faceAngleDegrees')),
+        Confidence(reference.confidenceFor('faceAngleDegrees')),
+      ).value,
       controllability: kAttributeControllability[CoachingAttribute.faceYaw]!,
     ),
   );
@@ -270,6 +289,7 @@ AttributeEvaluation? evaluateShoulderBalance(
   SubjectProfile subject,
   ReferenceProfile reference,
   ToleranceSettings tolerance,
+  bool isFrontCamera,
 ) {
   final subjectValue = subject.shoulderBalanceRatio;
   final referenceValue = reference.shoulderBalanceRatio;
@@ -288,7 +308,7 @@ AttributeEvaluation? evaluateShoulderBalance(
     thresholdForPose,
   );
 
-  final subjectLeftLowerThanReference = _shoulderBalanceDirectionIsMirrored
+  final subjectLeftLowerThanReference = isFrontCamera
       ? subjectValue < referenceValue
       : subjectValue > referenceValue;
 
@@ -396,6 +416,7 @@ AttributeEvaluation? evaluateBodyYaw(
   SubjectProfile subject,
   ReferenceProfile reference,
   ToleranceSettings tolerance,
+  bool isFrontCamera,
 ) {
   final subjectValue = subject.bodyYawEstimate;
   final referenceValue = reference.bodyYawEstimate;
@@ -406,7 +427,11 @@ AttributeEvaluation? evaluateBodyYaw(
     referenceValue,
     360.0,
   );
-  final signedDiff = ((subjectValue - referenceValue) + 180) % 360 - 180;
+  final signedDiff = ComparisonMath.signedCircularDiff(
+    subjectValue,
+    referenceValue,
+    360.0,
+  );
   final normalizedSeverity = ComparisonMath.normalizedSeverity(
     deviation,
     ComparisonMath.maxDeviationForPose,
@@ -419,7 +444,7 @@ AttributeEvaluation? evaluateBodyYaw(
     thresholdForPose,
   );
 
-  final subjectTurnedMoreTowardRight = _bodyYawDirectionIsMirrored
+  final subjectTurnedMoreTowardRight = isFrontCamera
       ? signedDiff < 0
       : signedDiff > 0;
 
@@ -563,8 +588,10 @@ AttributeEvaluation? evaluateMouthOpen(
       tier: CoachingTier.poseAndFace,
       normalizedSeverity: normalizedSeverity,
       fallbackPhrase: phrase,
-      confidence:
-          1.0, // no landmark-confidence signal wired for this attribute yet
+      confidence: Confidence.decisionConfidence(
+        Confidence(subject.confidenceFor('mouthOpenRatio')),
+        Confidence(reference.confidenceFor('mouthOpenRatio')),
+      ).value,
       controllability: kAttributeControllability[CoachingAttribute.mouthOpen]!,
     ),
   );
@@ -623,8 +650,10 @@ AttributeEvaluation? evaluateEyeOpen(
       tier: CoachingTier.poseAndFace,
       normalizedSeverity: normalizedSeverity,
       fallbackPhrase: phrase,
-      confidence:
-          1.0, // no landmark-confidence signal wired for this attribute yet
+      confidence: Confidence.decisionConfidence(
+        Confidence(subject.confidenceFor('eyeOpenRatio')),
+        Confidence(reference.confidenceFor('eyeOpenRatio')),
+      ).value,
       controllability: kAttributeControllability[CoachingAttribute.eyeOpen]!,
     ),
   );

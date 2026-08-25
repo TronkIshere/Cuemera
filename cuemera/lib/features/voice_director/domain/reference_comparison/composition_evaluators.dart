@@ -1,6 +1,7 @@
 import 'package:cuemera/features/voice_director/domain/action_plan.dart';
 import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
 
+import '../../../../core/analysis/analysis_constants.dart';
 import '../../../reference_photo/domain/comparison_math.dart';
 import '../../../reference_photo/domain/models/reference_profile.dart';
 import '../../../reference_photo/domain/models/tolerance_settings.dart';
@@ -72,7 +73,10 @@ AttributeEvaluation? evaluateSymmetry(
   final referenceValue = reference.symmetryScore;
   if (referenceValue == null) return null;
 
-  final deviation = (referenceValue - subjectValue).clamp(0.0, 1.0);
+  final deviation = ComparisonMath.oneSidedDeviation(
+    subjectValue,
+    referenceValue,
+  );
   final normalizedSeverity = ComparisonMath.normalizedSeverity(
     deviation,
     ComparisonMath.maxDeviationForComposition,
@@ -171,8 +175,8 @@ AttributeEvaluation? evaluateBackgroundClutter(
   final referenceValue = reference.backgroundClutterCount;
   if (referenceValue == null) return null;
 
-  final subjectValue = (scene.backgroundClutterCount / 10).clamp(0.0, 1.0);
-  final normalizedReferenceValue = (referenceValue / 10).clamp(0.0, 1.0);
+  final subjectValue = normalizeClutterCount(scene.backgroundClutterCount);
+  final normalizedReferenceValue = normalizeClutterCount(referenceValue);
 
   final deviation = ComparisonMath.deviation(
     subjectValue,

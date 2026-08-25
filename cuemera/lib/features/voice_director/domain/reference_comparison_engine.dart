@@ -306,8 +306,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
-        confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('faceAngleXDegrees')),
+          Confidence(reference.confidenceFor('faceAngleXDegrees')),
+        ).value,
         controllability:
             kAttributeControllability[CoachingAttribute.facePitch]!,
       ),
@@ -376,8 +378,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
-        confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('faceAngleZDegrees')),
+          Confidence(reference.confidenceFor('faceAngleZDegrees')),
+        ).value,
         controllability: kAttributeControllability[CoachingAttribute.faceRoll]!,
       ),
     );
@@ -445,8 +449,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
-        confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('faceAngleDegrees')),
+          Confidence(reference.confidenceFor('faceAngleDegrees')),
+        ).value,
         controllability: kAttributeControllability[CoachingAttribute.faceYaw]!,
       ),
     );
@@ -756,8 +762,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
-        confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('mouthOpenRatio')),
+          Confidence(reference.confidenceFor('mouthOpenRatio')),
+        ).value,
         controllability:
             kAttributeControllability[CoachingAttribute.mouthOpen]!,
       ),
@@ -817,8 +825,10 @@ class ReferenceComparisonEngine {
         tier: CoachingTier.poseAndFace,
         normalizedSeverity: normalizedSeverity,
         fallbackPhrase: phrase,
-        confidence:
-            1.0, // no landmark-confidence signal wired for this attribute yet
+        confidence: Confidence.decisionConfidence(
+          Confidence(subject.confidenceFor('eyeOpenRatio')),
+          Confidence(reference.confidenceFor('eyeOpenRatio')),
+        ).value,
         controllability: kAttributeControllability[CoachingAttribute.eyeOpen]!,
       ),
     );

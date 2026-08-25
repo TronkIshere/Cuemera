@@ -1,8 +1,19 @@
 // features/voice_director/domain/correction_feedback.dart
 
+import 'package:cuemera/features/reference_photo/domain/comparison_math.dart';
 import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
 
 enum CorrectionOutcome { improved, overshot, reversed, unchanged, unmeasurable }
+
+const Set<CoachingAttribute> kCircularAttributes = {
+  CoachingAttribute.shoulderAngle,
+  CoachingAttribute.facePitch,
+  CoachingAttribute.faceRoll,
+  CoachingAttribute.faceYaw,
+  CoachingAttribute.bodyYaw,
+  CoachingAttribute.hue,
+  CoachingAttribute.lightDirection,
+};
 
 class CorrectionRecord {
   CorrectionRecord({
@@ -42,8 +53,23 @@ class CorrectionRecord {
   }
 
   CorrectionOutcome _classify() {
-    final movement = postMeasurement! - preMeasurement;
-    if (movement.abs() < noiseFloor) return CorrectionOutcome.unchanged;
+    final circular = kCircularAttributes.contains(attribute);
+
+    final movement = circular
+        ? ComparisonMath.signedCircularDiff(
+            postMeasurement!,
+            preMeasurement,
+            360.0,
+          )
+        : postMeasurement! - preMeasurement;
+    final movementMagnitude = circular
+        ? ComparisonMath.circularDeviation(
+            postMeasurement!,
+            preMeasurement,
+            360.0,
+          )
+        : movement.abs();
+    if (movementMagnitude < noiseFloor) return CorrectionOutcome.unchanged;
 
     final target = referenceTarget;
     if (target == null) {
@@ -57,10 +83,22 @@ class CorrectionRecord {
           : CorrectionOutcome.reversed;
     }
 
-    final preDist = (preMeasurement - target).abs();
-    final postDist = (postMeasurement! - target).abs();
-    final preSide = (preMeasurement - target).sign;
-    final postSide = (postMeasurement! - target).sign;
+    final preDist = circular
+        ? ComparisonMath.circularDeviation(preMeasurement, target, 360.0)
+        : (preMeasurement - target).abs();
+    final postDist = circular
+        ? ComparisonMath.circularDeviation(postMeasurement!, target, 360.0)
+        : (postMeasurement! - target).abs();
+    final preSide = circular
+        ? ComparisonMath.signedCircularDiff(preMeasurement, target, 360.0).sign
+        : (preMeasurement - target).sign;
+    final postSide = circular
+        ? ComparisonMath.signedCircularDiff(
+            postMeasurement!,
+            target,
+            360.0,
+          ).sign
+        : (postMeasurement! - target).sign;
     final crossedTarget = preSide != 0 && postSide != 0 && preSide != postSide;
 
     if (crossedTarget) {

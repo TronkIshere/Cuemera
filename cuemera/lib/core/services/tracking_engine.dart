@@ -36,19 +36,35 @@ class TrackingEngine {
   int _lightDirectionMissingStreak = 0;
   int _depthMissingStreak = 0;
 
+  void reset() {
+    _pendingEyesOpen = null;
+    _eyesOpenStreak = 0;
+    _pendingExpression = null;
+    _expressionStreak = 0;
+    _pendingClutterCount = null;
+    _clutterStreak = 0;
+    _bodyRatioMissingStreak = 0;
+    _faceAngleMissingStreak = 0;
+    _faceAngleXMissingStreak = 0;
+    _faceAngleZMissingStreak = 0;
+    _mouthOpenMissingStreak = 0;
+    _eyeOpenRatioMissingStreak = 0;
+    _shoulderAngleMissingStreak = 0;
+    _shoulderBalanceMissingStreak = 0;
+    _shoulderSpanMissingStreak = 0;
+    _bodyYawMissingStreak = 0;
+    _eyesOpenMissingStreak = 0;
+    _expressionMissingStreak = 0;
+    _lightDirectionMissingStreak = 0;
+    _depthMissingStreak = 0;
+  }
+
   double? _ema(double? raw, double? previous) {
     if (raw == null) return previous;
     if (previous == null) return raw;
     return previous + thresholds.emaAlpha * (raw - previous);
   }
 
-  /// Same as [_ema] but for angle-like quantities that wrap at ±180°
-  /// (shoulderAngleDegrees) — averages via unit-vector (cos, sin) components
-  /// instead of the raw degree value, so a subject oscillating across the
-  /// ±180° boundary smooths to the true small delta instead of jumping
-  /// through 0°. Same fix already applied to ComparisonMath.circularDeviation
-  /// (reference_comparison_engine.dart, TrackingEngine.trackingProgress) —
-  /// this closes the third, previously-unfixed place this bug class hid.
   double? _circularEma(double? raw, double? previous) {
     if (raw == null) return previous;
     if (previous == null) return raw;
