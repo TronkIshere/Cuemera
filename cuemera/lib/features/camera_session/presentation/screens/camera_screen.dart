@@ -101,6 +101,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
       final cameraService = ref.read(cameraServiceProvider);
       await cameraService.init();
+      ref.read(isFrontCameraProvider.notifier).state =
+          cameraService.controller?.description.lensDirection ==
+          CameraLensDirection.front;
       ref.read(onFrameCallbackProvider.notifier).state = _onFrame;
       await cameraService.startImageStream(_onFrame);
 
@@ -291,6 +294,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     await cameraService.stopImageStream();
     await cameraService.switchLens();
+    ref.read(isFrontCameraProvider.notifier).state =
+        cameraService.controller?.description.lensDirection ==
+        CameraLensDirection.front;
 
     if (!mounted) return;
     setState(() {});
