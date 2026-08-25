@@ -321,26 +321,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
   }
 
-  Future<void> _onTapUp(
-    TapUpDetails details,
-    BoxConstraints constraints,
-  ) async {
-    final cameraService = ref.read(cameraServiceProvider);
-    final controller = cameraService.controller;
-    if (controller == null) return;
+  Future<void> _onTapUp(TapUpDetails details, Offset? normalized) async {
+    if (normalized == null) return;
 
-    final size = Size(constraints.maxWidth, constraints.maxHeight);
-    final normalized = Offset(
-      (details.localPosition.dx / size.width).clamp(0.0, 1.0),
-      (details.localPosition.dy / size.height).clamp(0.0, 1.0),
-    );
-
-    try {
-      await controller.setFocusPoint(normalized);
-      await controller.setExposurePoint(normalized);
-    } on CameraException {
-      // unsupported, ignore
-    }
+    await ref.read(cameraServiceProvider).focusAndMeterAt(normalized);
 
     if (!mounted) return;
     setState(() => _focusPoint = details.localPosition);
@@ -368,32 +352,16 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         break;
 
       case AppLifecycleState.inactive:
-        // Transient — e.g. pulling down the notification shade. Some OEM
-        // skins (confirmed on a real device: multiple onFocusEvent
-        // true/false toggles for a single gesture) fire this repeatedly;
-        // tearing down the whole camera pipeline on every one of these
-        // caused a "stuck loading" loop. Just pause the image stream —
-        // cheap, instant, nothing to reinitialize on the way back.
         if (_state == _CameraInitState.ready) {
           ref.read(cameraServiceProvider).stopImageStream();
         }
         break;
 
       case AppLifecycleState.resumed:
-        // NOTE: previously guarded by a single `if (_state != ready)
-        // return;` at the top of this method, shared with the paused/
-        // inactive branches above — since paused sets _state to loading
-        // right before this fires, that guard silently blocked resumed
-        // from ever calling _initCamera() again, leaving the camera
-        // stuck on the loading spinner permanently after any
-        // backgrounding. Each branch now checks only what it needs.
         if (_cameraDisposedForBackground) {
           _cameraDisposedForBackground = false;
           _initCamera();
         } else if (_state == _CameraInitState.ready) {
-          // Was only paused (inactive branch above), controller is still
-          // alive — resume the stream directly instead of a full
-          // teardown+reinit.
           ref.read(cameraServiceProvider).startImageStream(_onFrame);
         }
         break;
@@ -544,7 +512,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           onScaleStart: _onScaleStart,
           onScaleUpdate: _onScaleUpdate,
           onTapUp: _onTapUp,
-          hasCaptured: _hasCaptured,
         ),
         if (kDebugMode && ref.watch(debugPerfOverlayEnabledProvider))
           DebugPerfOverlay(key: _debugPerfOverlayKey),
