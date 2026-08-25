@@ -31,6 +31,8 @@ final onFrameCallbackProvider =
 
 final mlKitUnavailableProvider = StateProvider<bool>((ref) => false);
 
+final isFrontCameraProvider = StateProvider<bool>((ref) => false);
+
 final mlKitAvailabilityListenerProvider = Provider.autoDispose<void>((ref) {
   final mlKitService = ref.watch(mlKitServiceProvider);
 

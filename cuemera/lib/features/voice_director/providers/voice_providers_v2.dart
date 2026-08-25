@@ -196,10 +196,12 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
       aiCoachingSettingsProvider.select((s) => s.enabled),
     );
 
-    debugPrint(
-      'ai_gate(v2): aiUnavailable=$aiUnavailable, enabled=$aiCoachingEnabled, '
-      'modelNull=${phraseModel == null}, lifecycleState=${lifecycle.state.name}',
-    );
+    if (kDebugMode) {
+      debugPrint(
+        'ai_gate(v2): aiUnavailable=$aiUnavailable, enabled=$aiCoachingEnabled, '
+        'modelNull=${phraseModel == null}, lifecycleState=${lifecycle.state.name}',
+      );
+    }
 
     final now = DateTime.now();
     final llmCadenceOk =
@@ -245,9 +247,11 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
         generated,
         LlmCoachingContract.fromDecision(plan.decision),
       );
-      debugPrint(
-        'ai_gate(v2): generated="$generated" ${validation.debugLine()}',
-      );
+      if (kDebugMode) {
+        debugPrint(
+          'ai_gate(v2): generated="$generated" ${validation.debugLine()}',
+        );
+      }
 
       if (validation.passed) {
         ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
@@ -279,6 +283,7 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
     final scene = ref.read(sceneProfileProvider);
     final reference = ref.read(referenceProfileProvider).valueOrNull;
     final tolerance = ref.read(toleranceSettingsProvider);
+    final isFrontCamera = ref.read(isFrontCameraProvider);
     if (reference == null) return;
 
     switch (stateMachine.state) {
@@ -288,6 +293,7 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
           scene: scene,
           reference: reference,
           tolerance: tolerance,
+          isFrontCamera: isFrontCamera,
         );
         final output = stateMachine.observe(
           poseAndFace: tiers.poseAndFace,
@@ -303,10 +309,10 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
           ),
           tierRotation: tierRotation,
         );
-        tierRotation++;
 
         final plan = output.planToSpeak;
         if (plan != null) {
+          tierRotation++;
           final preMeasurement =
               currentMeasurementFor(plan.decision.attribute, subject, scene) ??
               0.0;

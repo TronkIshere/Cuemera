@@ -29,6 +29,7 @@ final nextActionProvider = Provider<PriorityAction?>((ref) {
   final referenceAsync = ref.watch(referenceProfileProvider);
   final tolerance = ref.watch(toleranceSettingsProvider);
   final engine = ref.watch(referenceComparisonEngineProvider);
+  final isFrontCamera = ref.watch(isFrontCameraProvider);
 
   final reference = referenceAsync.valueOrNull;
   if (reference == null) return null;
@@ -38,6 +39,7 @@ final nextActionProvider = Provider<PriorityAction?>((ref) {
     scene: scene,
     reference: reference,
     tolerance: tolerance,
+    isFrontCamera: isFrontCamera,
   );
 });
 
@@ -82,10 +84,12 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
       aiCoachingSettingsProvider.select((s) => s.enabled),
     );
 
-    debugPrint(
-      'ai_gate: aiUnavailable=$aiUnavailable, enabled=$aiCoachingEnabled, '
-      'modelNull=${phraseModel == null}, lifecycleState=${lifecycle.state.name}',
-    );
+    if (kDebugMode) {
+      debugPrint(
+        'ai_gate: aiUnavailable=$aiUnavailable, enabled=$aiCoachingEnabled, '
+        'modelNull=${phraseModel == null}, lifecycleState=${lifecycle.state.name}',
+      );
+    }
 
     final now = DateTime.now();
     final llmCadenceOk =
@@ -97,14 +101,16 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
         phraseModel == null ||
         !lifecycle.canAttemptGeneration ||
         !llmCadenceOk) {
-      debugPrint(
-        aiUnavailable ||
-                !aiCoachingEnabled ||
-                phraseModel == null ||
-                !lifecycle.canAttemptGeneration
-            ? 'ai_gate: fallback to rule-based phrase'
-            : 'ai_gate: llm cadence floor not met, fallback to rule-based phrase',
-      );
+      if (kDebugMode) {
+        debugPrint(
+          aiUnavailable ||
+                  !aiCoachingEnabled ||
+                  phraseModel == null ||
+                  !lifecycle.canAttemptGeneration
+              ? 'ai_gate: fallback to rule-based phrase'
+              : 'ai_gate: llm cadence floor not met, fallback to rule-based phrase',
+        );
+      }
       ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
       ttsService.speak(action.phrase, emphasis: emphasis);
       return;
@@ -136,11 +142,13 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
 
     lastPhraseGenerationLatencyMs = stopwatch.elapsedMilliseconds;
     lastPhraseGenerationSucceeded = generated != null;
-    debugPrint(
-      'coaching_phrase_generation: ${stopwatch.elapsedMilliseconds}ms, '
-      'attribute=${action.decision.attribute.name}, '
-      'succeeded=${generated != null}',
-    );
+    if (kDebugMode) {
+      debugPrint(
+        'coaching_phrase_generation: ${stopwatch.elapsedMilliseconds}ms, '
+        'attribute=${action.decision.attribute.name}, '
+        'succeeded=${generated != null}',
+      );
+    }
 
     if (epoch != generationEpoch) return;
 
@@ -149,7 +157,9 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
         generated,
         LlmCoachingContract.fromDecision(action.decision),
       );
-      debugPrint('ai_gate: generated="$generated" ${validation.debugLine()}');
+      if (kDebugMode) {
+        debugPrint('ai_gate: generated="$generated" ${validation.debugLine()}');
+      }
 
       if (validation.passed) {
         ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
@@ -167,9 +177,11 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
       return;
     }
 
-    debugPrint(
-      'ai_gate: generate() failed, lifecycleState=${lifecycle.state.name}',
-    );
+    if (kDebugMode) {
+      debugPrint(
+        'ai_gate: generate() failed, lifecycleState=${lifecycle.state.name}',
+      );
+    }
     ref.read(displayedCoachingPhraseProvider.notifier).state = action.phrase;
     ttsService.speak(action.phrase, emphasis: emphasis);
   }
@@ -202,11 +214,13 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
     if (pendingAction?.decision.dedupeKey == next.decision.dedupeKey) return;
 
     if (next.confidence < ConfidenceFloors.eligibleToSpeak) {
-      debugPrint(
-        'confidence_gate: ${next.decision.attribute.name} confidence='
-        '${next.confidence.toStringAsFixed(2)} below eligibleToSpeak '
-        '(${ConfidenceFloors.eligibleToSpeak}) — not speaking',
-      );
+      if (kDebugMode) {
+        debugPrint(
+          'confidence_gate: ${next.decision.attribute.name} confidence='
+          '${next.confidence.toStringAsFixed(2)} below eligibleToSpeak '
+          '(${ConfidenceFloors.eligibleToSpeak}) — not speaking',
+        );
+      }
       return;
     }
 

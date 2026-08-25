@@ -1,18 +1,19 @@
 // features/reference_photo/services/reference_image_analyzer.dart
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:cuemera/features/reference_photo/domain/models/reference_profile.dart';
 import 'package:flutter/foundation.dart'
     show debugPrint, kDebugMode, visibleForTesting;
-import 'package:flutter/material.dart' show HSLColor, Offset;
-import 'package:flutter/painting.dart' show FileImage;
+import 'package:flutter/material.dart' show Color, HSLColor, Offset;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 import 'package:image/image.dart' as img;
-import 'package:palette_generator/palette_generator.dart';
 
+import '../../../core/analysis/analysis_constants.dart';
 import '../../../core/pose/landmark_gate.dart';
 import '../../../core/services/error_reporting_service.dart';
 import '../../../core/services/expression_classifier.dart';
@@ -103,6 +104,11 @@ class _PaletteAnalysisResult {
   const _PaletteAnalysisResult({this.dominantHue, this.warmthScore});
 }
 
+img.Image? _decodeAndBakeOrientation(Uint8List bytes) {
+  final raw = img.decodeImage(bytes);
+  return raw == null ? null : img.bakeOrientation(raw);
+}
+
 class ReferenceImageAnalyzer {
   static const double _maxExtremityExtrapolationMultiplier = 4.0;
 
@@ -114,14 +120,12 @@ class ReferenceImageAnalyzer {
       _analyzeFace(inputImage),
       _runSegmentation(inputImage),
       _decodeImageFile(imagePath),
-      _analyzePalette(imagePath),
     ]);
 
     final landmarks = results[0] as Map<PoseLandmarkType, PoseLandmark>?;
     final faceResult = results[1] as _FaceAnalysisResult;
     final mask = results[2] as SegmentationMask?;
     final decodedResult = results[3] as _DecodedImageResult;
-    final paletteResult = results[4] as _PaletteAnalysisResult;
 
     final poseResult = await _derivePose(
       landmarks: landmarks,
@@ -138,7 +142,6 @@ class ReferenceImageAnalyzer {
         width: mask.width,
         height: mask.height,
         confidences: mask.confidences,
-        shoulderAngleDegrees: poseResult.shoulderAngleDegrees,
       );
       if (decodedResult.decoded != null) {
         backgroundClutterCount = estimateBackgroundClutter(
@@ -151,8 +154,10 @@ class ReferenceImageAnalyzer {
     }
 
     double? overallBrightness;
+    _PaletteAnalysisResult paletteResult = const _PaletteAnalysisResult();
     if (decodedResult.decoded != null) {
       overallBrightness = estimateBrightness(decodedResult.decoded!);
+      paletteResult = estimatePalette(decodedResult.decoded!);
     }
 
     if (kDebugMode) {
@@ -240,7 +245,6 @@ class ReferenceImageAnalyzer {
                 : '${kGatedLandmarkNames[i]}='
                       'x=${landmark.x.toStringAsFixed(1)},'
                       'y=${landmark.y.toStringAsFixed(1)},'
-                      'z=${landmark.z.toStringAsFixed(1)},'
                       'likelihood=${landmark.likelihood.toStringAsFixed(3)}',
           );
         }
@@ -262,6 +266,15 @@ class ReferenceImageAnalyzer {
 
     final imageWidth = decodedResult.imageWidth;
     final imageHeight = decodedResult.imageHeight;
+
+    SubjectBoundingBox? box;
+    if (mask != null && imageWidth != null && imageHeight != null) {
+      box = computeSubjectBoundingBox(
+        mask: mask,
+        imageWidth: imageWidth.round(),
+        imageHeight: imageHeight.round(),
+      );
+    }
 
     if (kDebugMode && mask != null) {
       final imageAspect = (imageWidth != null && imageHeight != null)
@@ -295,11 +308,6 @@ class ReferenceImageAnalyzer {
           'ReferenceImageAnalyzer raw mask confidence: ${lines.join(' ')}',
         );
 
-        final box = computeSubjectBoundingBox(
-          mask: mask,
-          imageWidth: imageWidth.round(),
-          imageHeight: imageHeight.round(),
-        );
         if (box == null) {
           debugPrint(
             'ReferenceImageAnalyzer raw subject box: none (mask empty)',
@@ -337,6 +345,7 @@ class ReferenceImageAnalyzer {
         mask: mask,
         imageWidth: imageWidth,
         imageHeight: imageHeight,
+        precomputedBox: box,
       );
     }
 
@@ -356,6 +365,7 @@ class ReferenceImageAnalyzer {
         originalGate: gate,
         decoded: decodedResult.decoded!,
         mask: mask,
+        precomputedBox: box,
       );
       if (outcome.changedAnyLandmark) gate = outcome.gate;
     }
@@ -636,9 +646,6 @@ class ReferenceImageAnalyzer {
   }
 
   Future<_DecodedImageResult> _decodeImageFile(String imagePath) async {
-    img.Image? decoded;
-    double? imageWidth;
-    double? imageHeight;
     try {
       final bytes = await File(imagePath).readAsBytes();
       if (kDebugMode) {
@@ -647,24 +654,21 @@ class ReferenceImageAnalyzer {
           'bytes=${bytes.length} fingerprint=${_cheapFingerprint(bytes)}',
         );
       }
-      final rawDecoded = img.decodeImage(bytes);
-      if (rawDecoded != null) {
-        decoded = img.bakeOrientation(rawDecoded);
-        imageWidth = decoded.width.toDouble();
-        imageHeight = decoded.height.toDouble();
-      }
+      final decoded = await Isolate.run(() => _decodeAndBakeOrientation(bytes));
+      if (decoded == null) return const _DecodedImageResult();
+      return _DecodedImageResult(
+        decoded: decoded,
+        imageWidth: decoded.width.toDouble(),
+        imageHeight: decoded.height.toDouble(),
+      );
     } catch (e, st) {
       ErrorReportingService.instance.report(
         e,
         st,
         context: 'ReferenceImageAnalyzer: image decode',
       );
+      return const _DecodedImageResult();
     }
-    return _DecodedImageResult(
-      decoded: decoded,
-      imageWidth: imageWidth,
-      imageHeight: imageHeight,
-    );
   }
 
   String _cheapFingerprint(List<int> bytes) {
@@ -676,33 +680,50 @@ class ReferenceImageAnalyzer {
     return acc.toRadixString(16);
   }
 
-  Future<_PaletteAnalysisResult> _analyzePalette(String imagePath) async {
-    double? dominantHue;
-    double? warmthScore;
-    try {
-      final paletteGenerator = await PaletteGenerator.fromImageProvider(
-        FileImage(File(imagePath)),
-      );
-      final dominantColor = paletteGenerator.dominantColor?.color;
-      if (dominantColor != null) {
-        final hsl = HSLColor.fromColor(dominantColor);
-        dominantHue = hsl.hue;
-        warmthScore = ((cos((dominantHue - 60) * pi / 180) + 1) / 2).clamp(
-          0.0,
-          1.0,
+  /// Dominant hue / warmth from the already-decoded image, in place of a
+  /// second full decode through PaletteGenerator. Trades PaletteGenerator's
+  /// quantized dominant-color extraction for a circular mean of hue over
+  /// samples with saturation above a low floor (skips near-grey pixels,
+  /// which have no reliable hue). Sampling density matches
+  /// _estimateBrightness's adaptive step, so cost does not scale with source
+  /// resolution.
+  @visibleForTesting
+  _PaletteAnalysisResult estimatePalette(img.Image decoded) {
+    final width = decoded.width;
+    final height = decoded.height;
+    if (width <= 0 || height <= 0) return const _PaletteAnalysisResult();
+
+    final step = adaptiveStep(width, height, kBrightnessTargetSamples);
+
+    double sumX = 0;
+    double sumY = 0;
+    int count = 0;
+
+    for (var y = 0; y < height; y += step) {
+      for (var x = 0; x < width; x += step) {
+        final pixel = decoded.getPixel(x, y);
+        final hsl = HSLColor.fromColor(
+          Color.fromARGB(
+            255,
+            pixel.r.round().clamp(0, 255),
+            pixel.g.round().clamp(0, 255),
+            pixel.b.round().clamp(0, 255),
+          ),
         );
+        if (hsl.saturation < 0.15) continue;
+        final hueRad = hsl.hue * pi / 180;
+        sumX += cos(hueRad);
+        sumY += sin(hueRad);
+        count++;
       }
-    } catch (e, st) {
-      ErrorReportingService.instance.report(
-        e,
-        st,
-        context: 'ReferenceImageAnalyzer: palette generation',
-      );
     }
-    return _PaletteAnalysisResult(
-      dominantHue: dominantHue,
-      warmthScore: warmthScore,
-    );
+
+    if (count == 0) return const _PaletteAnalysisResult();
+
+    var hue = atan2(sumY, sumX) * 180 / pi;
+    if (hue < 0) hue += 360;
+    final warmth = ((cos((hue - 60) * pi / 180) + 1) / 2).clamp(0.0, 1.0);
+    return _PaletteAnalysisResult(dominantHue: hue, warmthScore: warmth);
   }
 
   @visibleForTesting
@@ -726,7 +747,6 @@ class ReferenceImageAnalyzer {
     required int width,
     required int height,
     required List<double> confidences,
-    required double? shoulderAngleDegrees,
   }) {
     if (confidences.isEmpty || width <= 0 || height <= 0) return null;
 
@@ -766,8 +786,7 @@ class ReferenceImageAnalyzer {
     final height = decoded.height;
     if (width <= 0 || height <= 0 || confidences.isEmpty) return null;
 
-    const stepX = 6;
-    const stepY = 6;
+    final step = clutterStep(width);
 
     double varianceSum = 0;
     int sampleCount = 0;
@@ -776,8 +795,8 @@ class ReferenceImageAnalyzer {
     final scaleX = maskWidth / width;
     final scaleY = maskHeight / height;
 
-    for (var y = 0; y < height; y += stepY) {
-      for (var x = 0; x < width; x += stepX) {
+    for (var y = 0; y < height; y += step) {
+      for (var x = 0; x < width; x += step) {
         final maskX = (x * scaleX).floor();
         final maskY = (y * scaleY).floor();
         final maskIndex = maskY * maskWidth + maskX;
@@ -809,8 +828,7 @@ class ReferenceImageAnalyzer {
     if (sampleCount == 0) return null;
 
     final avgVariance = varianceSum / sampleCount;
-    final clutterScore = (avgVariance / 12.0).clamp(0.0, 10.0);
-    return clutterScore.round();
+    return clutterScoreFromVariance(avgVariance);
   }
 
   @visibleForTesting
@@ -819,13 +837,12 @@ class ReferenceImageAnalyzer {
     final height = decoded.height;
     if (width <= 0 || height <= 0) return null;
 
-    const stepX = 4;
-    const stepY = 4;
+    final step = adaptiveStep(width, height, kBrightnessTargetSamples);
     int sum = 0;
     int count = 0;
 
-    for (var y = 0; y < height; y += stepY) {
-      for (var x = 0; x < width; x += stepX) {
+    for (var y = 0; y < height; y += step) {
+      for (var x = 0; x < width; x += step) {
         final pixel = decoded.getPixel(x, y);
         final luma = (0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b);
         sum += luma.round();
