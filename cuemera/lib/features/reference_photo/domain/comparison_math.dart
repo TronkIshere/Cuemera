@@ -6,9 +6,14 @@ class ComparisonMath {
     return (subjectValue - referenceValue).abs();
   }
 
+  static double oneSidedDeviation(double subjectValue, double referenceValue) {
+    final diff = referenceValue - subjectValue;
+    return diff <= 0 ? 0.0 : diff;
+  }
+
   static double? relativeDeviation(double subjectValue, double referenceValue) {
     if (referenceValue == 0) return null;
-    return (subjectValue - referenceValue).abs() / referenceValue;
+    return (subjectValue - referenceValue).abs() / referenceValue.abs();
   }
 
   static double circularDeviation(
@@ -20,14 +25,26 @@ class ComparisonMath {
     return diff > wraparound / 2 ? wraparound - diff : diff;
   }
 
+  static double signedCircularDiff(
+    double subjectValue,
+    double referenceValue,
+    double wraparound,
+  ) {
+    final half = wraparound / 2;
+    return ((subjectValue - referenceValue) + half) % wraparound - half;
+  }
+
   static const double maxDeviationForPose = 90.0;
   static const double maxDeviationForPoseRatio = 1.0;
+  static const double maxRelativeDeviationForPoseRatio = 1.0;
   static const double maxDeviationForComposition = 1.0;
   static const double maxDeviationForColor = 1.0;
   static const double maxDeviationForHue = 180.0;
 
   static double thresholdForPose(double poseTolerance) => poseTolerance * 45.0;
   static double thresholdForPoseRatio(double poseTolerance) =>
+      poseTolerance * 0.5;
+  static double thresholdForRelativePoseRatio(double poseTolerance) =>
       poseTolerance * 0.5;
   static double thresholdForComposition(double compositionTolerance) =>
       compositionTolerance;
@@ -38,6 +55,7 @@ class ComparisonMath {
       colorTolerance * maxDeviationForHue;
 
   static double normalizedSeverity(double deviation, double maxDeviation) {
+    if (maxDeviation <= 0) return 0.0;
     return (deviation / maxDeviation).clamp(0.0, 1.0);
   }
 

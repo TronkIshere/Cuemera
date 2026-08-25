@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 
+import '../../../core/analysis/analysis_constants.dart';
 import '../domain/models/scene_profile.dart';
 import '../domain/models/subject_profile.dart';
 
@@ -33,7 +34,7 @@ class LightAnalyzer {
 
     final backgroundClutterCount = _backgroundClutterScore(backgroundVariance);
     final negativeSpaceScore = _negativeSpaceScore(subjectRatio);
-    final symmetryScore = _estimateSymmetry(maskStats, subject);
+    final symmetryScore = _estimateSymmetry(maskStats);
     final (hue, warmth) = _estimateColorTone(image);
     final depthEstimate = _depthScore(subjectRatio, backgroundVariance);
 
@@ -41,7 +42,8 @@ class LightAnalyzer {
     lastAnalyzeLightMicros = stopwatch.elapsedMicroseconds;
     if (debugLogFrameTiming) {
       debugPrint(
-        '[LightAnalyzer] analyzeLight: ${stopwatch.elapsedMicroseconds}us',
+        '[LightAnalyzer] analyzeLight: ${stopwatch.elapsedMicroseconds}us '
+        '(${image.width}x${image.height})',
       );
     }
 
@@ -66,7 +68,7 @@ class LightAnalyzer {
     final bytesPerRow = plane.bytesPerRow;
     if (bytes.isEmpty || width <= 0 || height <= 0) return 0.5;
 
-    final step = math.sqrt((width * height) / 2000).round().clamp(1, width);
+    final step = adaptiveStep(width, height, kBrightnessTargetSamples);
 
     int sum = 0;
     int count = 0;
@@ -97,7 +99,7 @@ class LightAnalyzer {
     return (1.0 - subjectRatio).clamp(0.0, 1.0);
   }
 
-  double _estimateSymmetry(_MaskStats? maskStats, SubjectProfile? subject) {
+  double _estimateSymmetry(_MaskStats? maskStats) {
     if (maskStats == null) return 0.5;
 
     final left = maskStats.leftSubjectPixels;
@@ -116,7 +118,7 @@ class LightAnalyzer {
     final height = mask.height;
     if (confidences.isEmpty || width <= 0 || height <= 0) return null;
 
-    const step = 4;
+    const step = kMaskSampleStep;
     final halfWidth = width / 2;
 
     int subjectPixels = 0;
@@ -175,7 +177,7 @@ class LightAnalyzer {
     final maskScaleX = useMask ? maskWidth / width : 0.0;
     final maskScaleY = useMask ? maskHeight / height : 0.0;
 
-    const step = 6;
+    final step = clutterStep(width);
     final halfWidth = width / 2;
     final halfHeight = height / 2;
 
@@ -218,6 +220,7 @@ class LightAnalyzer {
           if (maskIndex >= 0 &&
               maskIndex < maskConfidences.length &&
               maskConfidences[maskIndex] > 0.5) {
+            previousBackgroundValue = null;
             continue;
           }
         }
@@ -250,8 +253,7 @@ class LightAnalyzer {
 
   int _backgroundClutterScore(double? variance) {
     if (variance == null) return 0;
-    final clutterScore = (variance / 12.0).clamp(0.0, 10.0);
-    return clutterScore.round();
+    return clutterScoreFromVariance(variance);
   }
 
   double? _depthScore(double? subjectRatio, double? backgroundVariance) {

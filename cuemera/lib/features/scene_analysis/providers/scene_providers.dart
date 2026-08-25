@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 import 'package:cuemera/core/services/tracking_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/analysis/analysis_constants.dart';
 import '../../../core/services/ml_kit_service.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
 import '../../reference_photo/providers/detection_thresholds_provider.dart';
@@ -20,7 +21,7 @@ final sceneProfileProvider = StateProvider<SceneProfile>((ref) {
   return const SceneProfile(
     brightness: 0.5,
     negativeSpaceScore: 0.0,
-    symmetryScore: 0.0,
+    symmetryScore: 0.5,
     backgroundClutterCount: 0,
   );
 });
@@ -47,6 +48,11 @@ final trackingEngineProvider = Provider<TrackingEngine>((ref) {
   return TrackingEngine(thresholds: thresholds);
 });
 
+void resetLiveAnalyzers(Ref ref) {
+  ref.read(poseAnalyzerProvider).reset();
+  ref.read(faceAnalyzerProvider).reset();
+}
+
 final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
   final referenceAsync = ref.watch(referenceProfileProvider);
   final ReferenceProfile? reference = referenceAsync.valueOrNull;
@@ -55,21 +61,28 @@ final targetSubjectProfileProvider = Provider<SubjectProfile>((ref) {
     return SubjectProfile(
       bodyRatio: reference.bodyRatio,
       faceAngleDegrees: reference.faceAngleDegrees,
+      faceAngleXDegrees: reference.faceAngleXDegrees,
+      faceAngleZDegrees: reference.faceAngleZDegrees,
+      mouthOpenRatio: reference.mouthOpenRatio,
+      eyeOpenRatio: reference.eyeOpenRatio,
       shoulderAngleDegrees: reference.shoulderAngleDegrees,
-      eyesOpen: true,
+      shoulderBalanceRatio: reference.shoulderBalanceRatio,
+      shoulderSpanRatio: reference.shoulderSpanRatio,
+      bodyYawEstimate: reference.bodyYawEstimate,
+      leftArmRaiseDegrees: reference.leftArmRaiseDegrees,
+      rightArmRaiseDegrees: reference.rightArmRaiseDegrees,
+      leftElbowAngleDegrees: reference.leftElbowAngleDegrees,
+      rightElbowAngleDegrees: reference.rightElbowAngleDegrees,
+      leftArmPoseCategory: reference.leftArmPoseCategory,
+      rightArmPoseCategory: reference.rightArmPoseCategory,
+      eyesOpen: null,
       expression: reference.expression,
+      metricConfidence: reference.metricConfidence,
       timestamp: DateTime.now(),
     );
   }
 
-  return SubjectProfile(
-    bodyRatio: null,
-    faceAngleDegrees: 0.0,
-    shoulderAngleDegrees: 0.0,
-    eyesOpen: true,
-    expression: 'smiling',
-    timestamp: DateTime.now(),
-  );
+  return SubjectProfile(timestamp: DateTime.now());
 });
 
 final targetSceneProfileProvider = Provider<SceneProfile>((ref) {
@@ -78,9 +91,14 @@ final targetSceneProfileProvider = Provider<SceneProfile>((ref) {
 
   return SceneProfile(
     brightness: reference?.overallBrightness ?? 0.55,
-    negativeSpaceScore: 0.0,
-    symmetryScore: 0.0,
-    backgroundClutterCount: reference?.backgroundClutterCount ?? 5,
+    lightDirectionDegrees: reference?.lightDirectionDegrees,
+    negativeSpaceScore: reference?.negativeSpaceScore ?? 0.5,
+    symmetryScore: reference?.symmetryScore ?? 0.5,
+    subjectHorizontalPosition: reference?.subjectHorizontalPosition,
+    backgroundClutterCount:
+        reference?.backgroundClutterCount ?? (kClutterScoreCeiling / 2).round(),
+    liveWarmthScore: reference?.warmthScore,
+    liveDominantHue: reference?.dominantHue,
   );
 });
 
@@ -108,14 +126,10 @@ final sceneAnalysisListenerProvider = Provider.autoDispose<void>((ref) {
 
   final subscription = mlKitService.analysisStream.listen((result) {
     final previous = ref.read(subjectProfileProvider);
-    var raw = previous;
+    final at = DateTime.now();
 
-    if (result.poses != null) {
-      raw = poseAnalyzer.analyzePose(result.poses, raw);
-    }
-    if (result.faces != null) {
-      raw = faceAnalyzer.analyzeFace(result.faces, raw);
-    }
+    var raw = poseAnalyzer.analyzePose(result.poses, previous, now: at);
+    raw = faceAnalyzer.analyzeFace(result.faces, raw, now: at);
 
     final poseDetected = result.poses != null && result.poses!.isNotEmpty;
     final faceDetected = result.faces != null && result.faces!.isNotEmpty;
@@ -125,6 +139,7 @@ final sceneAnalysisListenerProvider = Provider.autoDispose<void>((ref) {
         .copyWith(
           subjectFullyInFrame: poseDetected,
           detectorsAgree: poseDetected && faceDetected,
+          timestamp: at,
         );
     ref.read(subjectProfileProvider.notifier).state = smoothed;
   });

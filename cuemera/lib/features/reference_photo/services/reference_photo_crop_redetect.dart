@@ -1,6 +1,8 @@
 // features/reference_photo/services/reference_photo_crop_redetect.dart
 
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
@@ -24,6 +26,7 @@ const List<PoseLandmarkType> _extremityTypes = [
 
 const double kContradictionCropLikelihoodCeiling = 0.3;
 const double kContradictionMaskConfidenceCeiling = 0.1;
+const int kCropRedetectJpegQuality = 92;
 
 bool shouldAttemptCropRedetect(PoseLandmarkGate gate) {
   var untrusted = 0;
@@ -67,6 +70,33 @@ class CropRedetectOutcome {
     required this.attempted,
     required this.changedAnyLandmark,
   });
+}
+
+class _CropRequest {
+  const _CropRequest({
+    required this.image,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+  });
+
+  final img.Image image;
+  final int left;
+  final int top;
+  final int width;
+  final int height;
+}
+
+Uint8List _cropAndEncode(_CropRequest request) {
+  final cropped = img.copyCrop(
+    request.image,
+    x: request.left,
+    y: request.top,
+    width: request.width,
+    height: request.height,
+  );
+  return img.encodeJpg(cropped, quality: kCropRedetectJpegQuality);
 }
 
 LandmarkVerification _verifyLandmark({
@@ -138,6 +168,7 @@ Future<CropRedetectOutcome> reconcileWithCrop({
   required PoseLandmarkGate originalGate,
   required img.Image decoded,
   required SegmentationMask mask,
+  SubjectBoundingBox? precomputedBox,
 }) async {
   if (!shouldAttemptCropRedetect(originalGate)) {
     return CropRedetectOutcome(
@@ -147,11 +178,13 @@ Future<CropRedetectOutcome> reconcileWithCrop({
     );
   }
 
-  final box = computeSubjectBoundingBox(
-    mask: mask,
-    imageWidth: decoded.width,
-    imageHeight: decoded.height,
-  );
+  final box =
+      precomputedBox ??
+      computeSubjectBoundingBox(
+        mask: mask,
+        imageWidth: decoded.width,
+        imageHeight: decoded.height,
+      );
   if (box == null || box.width <= 0 || box.height <= 0) {
     return CropRedetectOutcome(
       gate: originalGate,
@@ -166,14 +199,15 @@ Future<CropRedetectOutcome> reconcileWithCrop({
     options: PoseDetectorOptions(model: PoseDetectionModel.accurate),
   );
   try {
-    final cropped = img.copyCrop(
-      decoded,
-      x: box.left,
-      y: box.top,
+    final request = _CropRequest(
+      image: decoded,
+      left: box.left,
+      top: box.top,
       width: box.width,
       height: box.height,
     );
-    final bytes = img.encodeJpg(cropped, quality: 92);
+    final bytes = await Isolate.run(() => _cropAndEncode(request));
+
     tempPath =
         '${Directory.systemTemp.path}/'
         'cuemera_crop_redetect_${DateTime.now().microsecondsSinceEpoch}.jpg';
@@ -195,7 +229,9 @@ Future<CropRedetectOutcome> reconcileWithCrop({
       try {
         final file = File(tempPath);
         if (await file.exists()) await file.delete();
-      } catch (_) {}
+      } catch (_) {
+        // Best effort cleanup.
+      }
     }
   }
 
@@ -299,6 +335,7 @@ Future<CropRedetectOutcome> reconcileWithCrop({
     mask: mask,
     imageWidth: decoded.width.toDouble(),
     imageHeight: decoded.height.toDouble(),
+    precomputedBox: box,
   );
   final mergedGate = mergedMaskSignal.bypassed
       ? likelihoodMergedGate

@@ -28,6 +28,7 @@ MaskTrustSignal sampleMaskTrust({
   required SegmentationMask mask,
   required double imageWidth,
   required double imageHeight,
+  SubjectBoundingBox? precomputedBox,
   double confidenceThreshold = kMaskConfidenceThreshold,
   int sampleRadius = kMaskSampleRadius,
   double bypassFraction = kMaskBypassFraction,
@@ -40,15 +41,16 @@ MaskTrustSignal sampleMaskTrust({
     return MaskTrustSignal.none;
   }
 
-  final box = computeSubjectBoundingBox(
-    mask: mask,
-    imageWidth: imageWidth.round(),
-    imageHeight: imageHeight.round(),
-  );
+  final box =
+      precomputedBox ??
+      computeSubjectBoundingBox(
+        mask: mask,
+        imageWidth: imageWidth.round(),
+        imageHeight: imageHeight.round(),
+      );
 
   final confidence = <int, double>{};
   final failed = <int>{};
-  final outsideBox = <int>{};
   var sampled = 0;
 
   for (var i = 0; i < points.length; i++) {
@@ -65,10 +67,7 @@ MaskTrustSignal sampleMaskTrust({
     );
     confidence[i] = value;
     var isFailed = value < confidenceThreshold;
-    if (box != null && !_pointWithinBox(point, box)) {
-      isFailed = true;
-      outsideBox.add(i);
-    }
+    if (box != null && !_pointWithinBox(point, box)) isFailed = true;
     if (isFailed) failed.add(i);
   }
 
@@ -159,14 +158,21 @@ SubjectBoundingBox? computeSubjectBoundingBox({
   double confidenceThreshold = kMaskConfidenceThreshold,
   double paddingFraction = 0.08,
 }) {
+  if (mask.width <= 0 || mask.height <= 0) return null;
+  if (imageWidth <= 0 || imageHeight <= 0) return null;
+
+  final confidences = mask.confidences;
   var minX = mask.width;
   var maxX = -1;
   var minY = mask.height;
   var maxY = -1;
 
   for (var y = 0; y < mask.height; y++) {
+    final rowOffset = y * mask.width;
     for (var x = 0; x < mask.width; x++) {
-      if (mask.confidences[y * mask.width + x] >= confidenceThreshold) {
+      final index = rowOffset + x;
+      if (index >= confidences.length) break;
+      if (confidences[index] >= confidenceThreshold) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;

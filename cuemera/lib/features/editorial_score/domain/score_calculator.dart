@@ -1,4 +1,5 @@
 // features/editorial_score/domain/score_calculator.dart
+import '../../../core/analysis/analysis_constants.dart';
 import '../../reference_photo/domain/comparison_math.dart';
 import '../../reference_photo/domain/models/reference_profile.dart';
 import '../../reference_photo/domain/models/tolerance_settings.dart';
@@ -39,52 +40,28 @@ EditorialScore calculateReferenceScore(
   ReferenceProfile reference,
   ToleranceSettings tolerance,
 ) {
-  final composition = _compositionScore(scene, reference, tolerance);
-  final lighting = _lightingScore(scene, reference, tolerance);
-  final expression = _expressionScore(subject, reference, tolerance);
+  final breakdown = <String, int>{};
 
-  final refBackgroundClutter = reference.backgroundClutterCount;
-  int background;
-  if (refBackgroundClutter != null) {
-    final sceneClutterNormalized = (scene.backgroundClutterCount / 10).clamp(
-      0.0,
-      1.0,
-    );
-    final refClutterNormalized = (refBackgroundClutter / 10).clamp(0.0, 1.0);
-    final deviation = ComparisonMath.deviation(
-      sceneClutterNormalized,
-      refClutterNormalized,
-    );
-    final thresholdForComposition = ComparisonMath.thresholdForComposition(
-      tolerance.compositionTolerance,
-    );
-    final similarity = ComparisonMath.similarity(
-      deviation,
-      thresholdForComposition,
-      ComparisonMath.maxDeviationForComposition,
-    );
-    background = (similarity * 100).round().clamp(0, 100);
-  } else {
-    final backgroundRaw =
-        1.0 - (scene.backgroundClutterCount / 10).clamp(0.0, 1.0);
-    background = (backgroundRaw * 100).round();
-  }
+  final composition = _compositionScore(scene, reference, tolerance);
+  if (composition != null) breakdown['composition'] = composition;
+
+  final lighting = _lightingScore(scene, reference, tolerance);
+  if (lighting != null) breakdown['lighting'] = lighting;
+
+  final expression = _expressionScore(subject, reference, tolerance);
+  if (expression != null) breakdown['expression'] = expression;
+
+  final background = _backgroundScore(scene, reference, tolerance);
+  if (background != null) breakdown['background'] = background;
 
   final story = _storyScore(scene);
+  if (story != null) breakdown['story'] = story;
 
-  final breakdown = {
-    'composition': composition,
-    'lighting': lighting,
-    'expression': expression,
-    'background': background,
-    'story': story,
-  };
+  if (breakdown.isEmpty) {
+    return const EditorialScore(overall: 0, breakdown: {});
+  }
 
-  // All five categories are weighted equally, so the weighted sum reduces
-  // to a plain average — no need for a weights map or a fallback that
-  // could never trigger (every key in breakdown is also a key here).
   final average = breakdown.values.reduce((a, b) => a + b) / breakdown.length;
-
   final overall = average.round().clamp(0, 100);
 
   String? suggestion;
@@ -100,13 +77,39 @@ EditorialScore calculateReferenceScore(
   );
 }
 
-int _storyScore(SceneProfile scene) {
+int? _storyScore(SceneProfile scene) {
   final depthEstimate = scene.depthEstimate;
-  if (depthEstimate == null) return 50;
+  if (depthEstimate == null) return null;
   return (depthEstimate.clamp(0.0, 1.0) * 100).round();
 }
 
-int _compositionScore(
+int? _backgroundScore(
+  SceneProfile scene,
+  ReferenceProfile reference,
+  ToleranceSettings tolerance,
+) {
+  final refBackgroundClutter = reference.backgroundClutterCount;
+  final sceneClutterNormalized = normalizeClutterCount(
+    scene.backgroundClutterCount,
+  );
+
+  if (refBackgroundClutter == null) {
+    return ((1.0 - sceneClutterNormalized) * 100).round().clamp(0, 100);
+  }
+
+  final deviation = ComparisonMath.deviation(
+    sceneClutterNormalized,
+    normalizeClutterCount(refBackgroundClutter),
+  );
+  final similarity = ComparisonMath.similarity(
+    deviation,
+    ComparisonMath.thresholdForComposition(tolerance.compositionTolerance),
+    ComparisonMath.maxDeviationForComposition,
+  );
+  return (similarity * 100).round().clamp(0, 100);
+}
+
+int? _compositionScore(
   SceneProfile scene,
   ReferenceProfile reference,
   ToleranceSettings tolerance,
@@ -114,11 +117,7 @@ int _compositionScore(
   final refNegativeSpace = reference.negativeSpaceScore;
   final refSymmetry = reference.symmetryScore;
 
-  if (refNegativeSpace == null && refSymmetry == null) {
-    return ((scene.negativeSpaceScore * 0.5 + scene.symmetryScore * 0.5) * 100)
-        .round()
-        .clamp(0, 100);
-  }
+  if (refNegativeSpace == null && refSymmetry == null) return null;
 
   final thresholdForComposition = ComparisonMath.thresholdForComposition(
     tolerance.compositionTolerance,
@@ -128,12 +127,8 @@ int _compositionScore(
   int count = 0;
 
   if (refNegativeSpace != null) {
-    final deviation = ComparisonMath.deviation(
-      scene.negativeSpaceScore,
-      refNegativeSpace,
-    );
     sum += ComparisonMath.similarity(
-      deviation,
+      ComparisonMath.deviation(scene.negativeSpaceScore, refNegativeSpace),
       thresholdForComposition,
       ComparisonMath.maxDeviationForComposition,
     );
@@ -141,9 +136,8 @@ int _compositionScore(
   }
 
   if (refSymmetry != null) {
-    final deviation = (refSymmetry - scene.symmetryScore).clamp(0.0, 1.0);
     sum += ComparisonMath.similarity(
-      deviation,
+      ComparisonMath.oneSidedDeviation(scene.symmetryScore, refSymmetry),
       thresholdForComposition,
       ComparisonMath.maxDeviationForComposition,
     );
@@ -153,58 +147,42 @@ int _compositionScore(
   return ((sum / count) * 100).round().clamp(0, 100);
 }
 
-int _lightingScore(
+int? _lightingScore(
   SceneProfile scene,
   ReferenceProfile reference,
   ToleranceSettings tolerance,
 ) {
   final refBrightness = reference.overallBrightness;
+  if (refBrightness == null) return null;
 
-  if (refBrightness == null) {
-    final lightingRaw = 1.0 - (scene.brightness - 0.55).abs() * 2;
-    return (lightingRaw.clamp(0.0, 1.0) * 100).round();
-  }
-
-  final deviation = ComparisonMath.deviation(scene.brightness, refBrightness);
   final thresholdForColor = ComparisonMath.thresholdForColor(
     tolerance.colorTolerance,
   );
-  final brightnessSimilarity = ComparisonMath.similarity(
-    deviation,
+
+  double sum = ComparisonMath.similarity(
+    ComparisonMath.deviation(scene.brightness, refBrightness),
     thresholdForColor,
     ComparisonMath.maxDeviationForColor,
   );
+  int count = 1;
 
   final refWarmth = reference.warmthScore;
   final sceneWarmth = scene.liveWarmthScore;
-  final refHue = reference.dominantHue;
-  final sceneHue = scene.liveDominantHue;
-
-  double sum = brightnessSimilarity;
-  int count = 1;
-
   if (refWarmth != null && sceneWarmth != null) {
-    final warmthDeviation = ComparisonMath.deviation(sceneWarmth, refWarmth);
     sum += ComparisonMath.similarity(
-      warmthDeviation,
+      ComparisonMath.deviation(sceneWarmth, refWarmth),
       thresholdForColor,
       ComparisonMath.maxDeviationForColor,
     );
     count++;
   }
 
+  final refHue = reference.dominantHue;
+  final sceneHue = scene.liveDominantHue;
   if (refHue != null && sceneHue != null) {
-    final hueDeviation = ComparisonMath.circularDeviation(
-      sceneHue,
-      refHue,
-      360.0,
-    );
-    final thresholdForHue = ComparisonMath.thresholdForHue(
-      tolerance.colorTolerance,
-    );
     sum += ComparisonMath.similarity(
-      hueDeviation,
-      thresholdForHue,
+      ComparisonMath.circularDeviation(sceneHue, refHue, 360.0),
+      ComparisonMath.thresholdForHue(tolerance.colorTolerance),
       ComparisonMath.maxDeviationForHue,
     );
     count++;
@@ -213,34 +191,19 @@ int _lightingScore(
   return ((sum / count) * 100).round().clamp(0, 100);
 }
 
-int _expressionScore(
+int? _expressionScore(
   SubjectProfile subject,
   ReferenceProfile reference,
   ToleranceSettings tolerance,
 ) {
   final refExpression = reference.expression;
-
-  if (refExpression == null) return 60;
-
-  if (subject.expression == null) {
-    // The reference has a target expression, but the subject side has no
-    // expression signal (expected to be the permanent case now that
-    // FaceAnalyzer.enableEyeAndExpressionSignals is off). Falling through
-    // to the match check below would silently score this as a maximal
-    // mismatch on every single frame — not an intentional judgment, just
-    // an artifact of `null == refExpression` always being false. Use the
-    // same neutral 60 used for the "no signal at all" case above instead.
-    return 60;
-  }
+  if (refExpression == null) return null;
+  if (subject.expression == null) return null;
 
   final matches = subject.expression == refExpression;
-  final deviation = matches ? 0.0 : 1.0;
-  final thresholdForExpression = ComparisonMath.thresholdForExpression(
-    tolerance.expressionTolerance,
-  );
   final similarity = ComparisonMath.similarity(
-    deviation,
-    thresholdForExpression,
+    matches ? 0.0 : 1.0,
+    ComparisonMath.thresholdForExpression(tolerance.expressionTolerance),
     1.0,
   );
 

@@ -12,7 +12,6 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_typography.dart';
 import '../../../../core/pose/landmark_gate.dart';
 import '../../../../shared/widgets/loading_indicator.dart';
-import '../../domain/models/tolerance_settings.dart';
 import '../../providers/reference_providers.dart';
 
 class ReferencePickerSheet extends ConsumerWidget {
@@ -30,12 +29,9 @@ class ReferencePickerSheet extends ConsumerWidget {
     final colors = Theme.of(context).extension<AppColors>()!;
     final imagePath = ref.watch(selectedReferenceImagePathProvider);
     final profileAsync = ref.watch(referenceProfileProvider);
-    final tolerance = ref.watch(toleranceSettingsProvider);
-    final profile = profileAsync.maybeWhen(
-      data: (value) => value,
-      orElse: () => null,
-    );
+    final profile = profileAsync.valueOrNull;
     final hasNoDetection =
+        !profileAsync.isLoading &&
         profile != null &&
         (profile.poseLandmarkPoints == null ||
             profile.poseLandmarkPoints!.every((p) => p == null)) &&
@@ -65,7 +61,7 @@ class ReferencePickerSheet extends ConsumerWidget {
                       color: colors.surface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: colors.textMuted.withOpacity(0.15),
+                        color: colors.textMuted.withValues(alpha: 0.15),
                       ),
                     ),
                     clipBehavior: Clip.antiAlias,
@@ -127,7 +123,7 @@ class ReferencePickerSheet extends ConsumerWidget {
                   Container(
                     padding: const EdgeInsets.all(AppSpacing.sm),
                     decoration: BoxDecoration(
-                      color: colors.textMuted.withOpacity(0.1),
+                      color: colors.textMuted.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -151,13 +147,9 @@ class ReferencePickerSheet extends ConsumerWidget {
                   ),
                 if (imagePath != null)
                   profileAsync.when(
-                    data: (profile) => profile == null
+                    data: (value) => value == null
                         ? const SizedBox.shrink()
-                        : ToleranceSliders(
-                            colors: colors,
-                            tolerance: tolerance,
-                            ref: ref,
-                          ),
+                        : ToleranceSliders(colors: colors),
                     loading: () => const Padding(
                       padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
                       child: Center(child: LoadingIndicator()),
@@ -276,16 +268,10 @@ class ReferenceAnalysisPainter extends CustomPainter {
   }
 }
 
-class ToleranceSliders extends StatelessWidget {
-  const ToleranceSliders({
-    required this.colors,
-    required this.tolerance,
-    required this.ref,
-  });
+class ToleranceSliders extends ConsumerWidget {
+  const ToleranceSliders({super.key, required this.colors});
 
   final AppColors colors;
-  final ToleranceSettings tolerance;
-  final WidgetRef ref;
 
   Widget _slider(String label, double value, ValueChanged<double> onChanged) {
     return Column(
@@ -293,11 +279,11 @@ class ToleranceSliders extends StatelessWidget {
       children: [
         Text(label, style: AppTypography.caption(colors)),
         Slider(
-          value: value,
+          value: value.clamp(0.0, 1.0),
           min: 0.0,
           max: 1.0,
           activeColor: colors.accent,
-          inactiveColor: colors.textMuted.withOpacity(0.3),
+          inactiveColor: colors.textMuted.withValues(alpha: 0.3),
           onChanged: onChanged,
         ),
       ],
@@ -305,7 +291,8 @@ class ToleranceSliders extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tolerance = ref.watch(toleranceSettingsProvider);
     final notifier = ref.read(toleranceSettingsProvider.notifier);
 
     return Column(

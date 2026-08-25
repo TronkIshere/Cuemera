@@ -7,41 +7,51 @@ import '../../../core/pose/landmark_gate.dart';
 import '../../../core/tracking/temporal_stabilizer.dart';
 import '../domain/models/subject_profile.dart';
 
+const List<String> kPoseMetricKeys = [
+  'bodyRatio',
+  'shoulderAngleDegrees',
+  'shoulderBalanceRatio',
+  'shoulderSpanRatio',
+  'bodyYawEstimate',
+  'leftArmRaiseDegrees',
+  'rightArmRaiseDegrees',
+  'leftElbowAngleDegrees',
+  'rightElbowAngleDegrees',
+];
+
 class PoseAnalyzer {
   PoseAnalyzer({StabilizerConfig? stabilizerConfig})
-    : _config = stabilizerConfig ?? const StabilizerConfig();
+    : _config = stabilizerConfig ?? const StabilizerConfig() {
+    _buildStabilizers();
+  }
 
   static const double _maxExtremityExtrapolationMultiplier = 4.0;
 
   final StabilizerConfig _config;
 
-  late final TemporalStabilizer _bodyRatioStabilizer = TemporalStabilizer(
-    _config,
-  );
-  late final CircularStabilizer _shoulderAngleStabilizer = CircularStabilizer(
-    _config,
-  );
-  late final TemporalStabilizer _shoulderBalanceStabilizer = TemporalStabilizer(
-    _config,
-  );
-  late final TemporalStabilizer _shoulderSpanStabilizer = TemporalStabilizer(
-    _config,
-  );
-  late final CircularStabilizer _bodyYawStabilizer = CircularStabilizer(
-    _config,
-  );
-  late final TemporalStabilizer _leftArmRaiseStabilizer = TemporalStabilizer(
-    _config,
-  );
-  late final TemporalStabilizer _rightArmRaiseStabilizer = TemporalStabilizer(
-    _config,
-  );
-  late final TemporalStabilizer _leftElbowAngleStabilizer = TemporalStabilizer(
-    _config,
-  );
-  late final TemporalStabilizer _rightElbowAngleStabilizer = TemporalStabilizer(
-    _config,
-  );
+  late TemporalStabilizer _bodyRatioStabilizer;
+  late CircularStabilizer _shoulderAngleStabilizer;
+  late TemporalStabilizer _shoulderBalanceStabilizer;
+  late TemporalStabilizer _shoulderSpanStabilizer;
+  late CircularStabilizer _bodyYawStabilizer;
+  late TemporalStabilizer _leftArmRaiseStabilizer;
+  late TemporalStabilizer _rightArmRaiseStabilizer;
+  late TemporalStabilizer _leftElbowAngleStabilizer;
+  late TemporalStabilizer _rightElbowAngleStabilizer;
+
+  void _buildStabilizers() {
+    _bodyRatioStabilizer = TemporalStabilizer(_config);
+    _shoulderAngleStabilizer = CircularStabilizer(_config);
+    _shoulderBalanceStabilizer = TemporalStabilizer(_config);
+    _shoulderSpanStabilizer = TemporalStabilizer(_config);
+    _bodyYawStabilizer = CircularStabilizer(_config);
+    _leftArmRaiseStabilizer = TemporalStabilizer(_config);
+    _rightArmRaiseStabilizer = TemporalStabilizer(_config);
+    _leftElbowAngleStabilizer = TemporalStabilizer(_config);
+    _rightElbowAngleStabilizer = TemporalStabilizer(_config);
+  }
+
+  void reset() => _buildStabilizers();
 
   StabilizedMetric? _resolveLinear(
     TemporalStabilizer stabilizer,
@@ -70,6 +80,38 @@ class PoseAnalyzer {
       if (value < lowest) lowest = value;
     }
     return lowest;
+  }
+
+  Map<String, double>? _mergeConfidence(
+    Map<String, double>? previous,
+    Map<String, double> poseConfidence,
+  ) {
+    final merged = <String, double>{};
+    if (previous != null) {
+      for (final entry in previous.entries) {
+        if (!kPoseMetricKeys.contains(entry.key))
+          merged[entry.key] = entry.value;
+      }
+    }
+    merged.addAll(poseConfidence);
+    return merged.isEmpty ? null : merged;
+  }
+
+  Map<String, bool> _mergeEligibility(
+    Map<String, bool>? previous,
+    Map<String, StabilizedMetric?> metrics,
+  ) {
+    final merged = <String, bool>{};
+    if (previous != null) {
+      for (final entry in previous.entries) {
+        if (!kPoseMetricKeys.contains(entry.key))
+          merged[entry.key] = entry.value;
+      }
+    }
+    for (final entry in metrics.entries) {
+      merged[entry.key] = entry.value?.isEligible ?? false;
+    }
+    return merged;
   }
 
   double? _angleBetweenDegrees(
@@ -184,6 +226,24 @@ class PoseAnalyzer {
         at,
       );
 
+      final metrics = <String, StabilizedMetric?>{
+        'bodyRatio': bodyRatioMetric,
+        'shoulderAngleDegrees': shoulderAngleMetric,
+        'shoulderBalanceRatio': shoulderBalanceMetric,
+        'shoulderSpanRatio': shoulderSpanMetric,
+        'bodyYawEstimate': bodyYawMetric,
+        'leftArmRaiseDegrees': leftArmRaiseMetric,
+        'rightArmRaiseDegrees': rightArmRaiseMetric,
+        'leftElbowAngleDegrees': leftElbowAngleMetric,
+        'rightElbowAngleDegrees': rightElbowAngleMetric,
+      };
+
+      final decayedConfidence = <String, double>{
+        for (final entry in metrics.entries)
+          if (entry.value != null)
+            entry.key: entry.value!.temporalConfidence.clamp(0.0, 1.0),
+      };
+
       return previous.copyWith(
         bodyRatio: bodyRatioMetric?.value,
         shoulderAngleDegrees: shoulderAngleMetric?.value,
@@ -196,17 +256,15 @@ class PoseAnalyzer {
         rightElbowAngleDegrees: rightElbowAngleMetric?.value,
         leftArmPoseCategory: null,
         rightArmPoseCategory: null,
-        metricTemporalEligibility: {
-          'bodyRatio': bodyRatioMetric?.isEligible ?? false,
-          'shoulderAngleDegrees': shoulderAngleMetric?.isEligible ?? false,
-          'shoulderBalanceRatio': shoulderBalanceMetric?.isEligible ?? false,
-          'shoulderSpanRatio': shoulderSpanMetric?.isEligible ?? false,
-          'bodyYawEstimate': bodyYawMetric?.isEligible ?? false,
-          'leftArmRaiseDegrees': leftArmRaiseMetric?.isEligible ?? false,
-          'rightArmRaiseDegrees': rightArmRaiseMetric?.isEligible ?? false,
-          'leftElbowAngleDegrees': leftElbowAngleMetric?.isEligible ?? false,
-          'rightElbowAngleDegrees': rightElbowAngleMetric?.isEligible ?? false,
-        },
+        metricConfidence: _mergeConfidence(
+          previous.metricConfidence,
+          decayedConfidence,
+        ),
+        metricTemporalEligibility: _mergeEligibility(
+          previous.metricTemporalEligibility,
+          metrics,
+        ),
+        timestamp: at,
       );
     }
 
@@ -411,6 +469,18 @@ class PoseAnalyzer {
       at,
     );
 
+    final metrics = <String, StabilizedMetric?>{
+      'bodyRatio': bodyRatioMetric,
+      'shoulderAngleDegrees': shoulderAngleMetric,
+      'shoulderBalanceRatio': shoulderBalanceMetric,
+      'shoulderSpanRatio': shoulderSpanMetric,
+      'bodyYawEstimate': bodyYawMetric,
+      'leftArmRaiseDegrees': leftArmRaiseMetric,
+      'rightArmRaiseDegrees': rightArmRaiseMetric,
+      'leftElbowAngleDegrees': leftElbowAngleMetric,
+      'rightElbowAngleDegrees': rightElbowAngleMetric,
+    };
+
     return previous.copyWith(
       bodyRatio: bodyRatioMetric?.value,
       shoulderAngleDegrees: shoulderAngleMetric?.value,
@@ -423,18 +493,15 @@ class PoseAnalyzer {
       rightElbowAngleDegrees: rightElbowAngleMetric?.value,
       leftArmPoseCategory: leftArmPoseCategory,
       rightArmPoseCategory: rightArmPoseCategory,
-      metricConfidence: metricConfidence.isEmpty ? null : metricConfidence,
-      metricTemporalEligibility: {
-        'bodyRatio': bodyRatioMetric?.isEligible ?? false,
-        'shoulderAngleDegrees': shoulderAngleMetric?.isEligible ?? false,
-        'shoulderBalanceRatio': shoulderBalanceMetric?.isEligible ?? false,
-        'shoulderSpanRatio': shoulderSpanMetric?.isEligible ?? false,
-        'bodyYawEstimate': bodyYawMetric?.isEligible ?? false,
-        'leftArmRaiseDegrees': leftArmRaiseMetric?.isEligible ?? false,
-        'rightArmRaiseDegrees': rightArmRaiseMetric?.isEligible ?? false,
-        'leftElbowAngleDegrees': leftElbowAngleMetric?.isEligible ?? false,
-        'rightElbowAngleDegrees': rightElbowAngleMetric?.isEligible ?? false,
-      },
+      metricConfidence: _mergeConfidence(
+        previous.metricConfidence,
+        metricConfidence,
+      ),
+      metricTemporalEligibility: _mergeEligibility(
+        previous.metricTemporalEligibility,
+        metrics,
+      ),
+      timestamp: at,
     );
   }
 }

@@ -87,6 +87,7 @@ class SubjectProfile {
     Object? metricTemporalEligibility = _unset,
     Object? subjectFullyInFrame = _unset,
     Object? detectorsAgree = _unset,
+    DateTime? timestamp,
   }) {
     return SubjectProfile(
       bodyRatio: identical(bodyRatio, _unset)
@@ -153,7 +154,7 @@ class SubjectProfile {
       detectorsAgree: identical(detectorsAgree, _unset)
           ? this.detectorsAgree
           : detectorsAgree as bool?,
-      timestamp: DateTime.now(),
+      timestamp: timestamp ?? DateTime.now(),
     );
   }
 }
