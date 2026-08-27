@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 
@@ -78,6 +79,17 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // A one-time setEnabledSystemUIMode call doesn't survive Android
+    // bringing the system bars back (edge swipe, notification shade,
+    // window focus change) — this callback re-hides them every time that
+    // happens while this screen is on top. Cleared in dispose() so it
+    // doesn't fight with other screens that want the bars visible.
+    SystemChrome.setSystemUIChangeCallback((systemOverlaysAreVisible) async {
+      if (systemOverlaysAreVisible) {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
     _cameraService = ref.read(cameraServiceProvider);
     ref.read(autoCaptureCountProvider.notifier).state = 0;
     WidgetsBinding.instance.addObserver(this);
@@ -368,6 +380,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         break;
 
       case AppLifecycleState.resumed:
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
         if (_cameraDisposedForBackground) {
           _cameraDisposedForBackground = false;
           _initCamera();
@@ -383,6 +396,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   @override
   void dispose() {
+    SystemChrome.setSystemUIChangeCallback(null);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _focusRingTimer?.cancel();
     _mlKitSubscription?.cancel();
     _cameraService.stopImageStream();
