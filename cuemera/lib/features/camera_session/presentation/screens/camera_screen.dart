@@ -27,9 +27,11 @@ import '../../../reference_photo/presentation/widgets/reference_picker_sheet.dar
 import '../../../reference_photo/providers/reference_providers.dart';
 import '../../../scene_analysis/providers/scene_providers.dart';
 import '../../../scene_analysis/services/light_analyzer.dart';
+import '../../../settings/providers/coaching_v2_settings_provider.dart';
 import '../../../settings/providers/debug_overlay_settings_provider.dart';
 import '../../../settings/providers/live_detection_settings_provider.dart';
 import '../../../voice_director/providers/voice_providers.dart';
+import '../../../voice_director/providers/voice_providers_v2.dart';
 import '../widgets/camera_preview_layer.dart';
 import '../widgets/camera_top_nav_bar.dart';
 import '../widgets/debug_perf_overlay.dart';
@@ -394,7 +396,16 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final colors = Theme.of(context).extension<AppColors>()!;
 
     ref.watch(sceneAnalysisListenerProvider);
-    ref.watch(voiceDirectorListenerProvider);
+    // Bug found and fixed this session: this used to unconditionally watch
+    // voiceDirectorListenerProvider (v1) regardless of the "Coaching v2
+    // (experimental)" toggle in Settings — coachingV2SettingsProvider was
+    // never read anywhere in this file, making that switch a dead control.
+    // Now exactly one of the two listeners is watched, never both.
+    if (ref.watch(coachingV2SettingsProvider).enabled) {
+      ref.watch(voiceDirectorListenerV2Provider);
+    } else {
+      ref.watch(voiceDirectorListenerProvider);
+    }
     ref.watch(mlKitAvailabilityListenerProvider);
 
     ref.listen<Shot?>(capturedShotProvider, (previous, shot) {

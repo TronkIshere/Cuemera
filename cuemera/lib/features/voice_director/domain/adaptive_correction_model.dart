@@ -12,6 +12,7 @@
 // today) to use for the *next* instruction on the same attribute — it never
 // invents new wording, so it introduces no new hallucination surface.
 
+import 'package:cuemera/features/reference_photo/domain/comparison_math.dart';
 import 'package:cuemera/features/voice_director/domain/correction_feedback.dart';
 import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
 
@@ -58,8 +59,13 @@ class ResponsivenessModel {
       return;
     if (record.postMeasurement == null) return;
 
-    final actualMovement = (record.postMeasurement! - record.preMeasurement)
-        .abs();
+    final actualMovement = kCircularAttributes.contains(record.attribute)
+        ? ComparisonMath.circularDeviation(
+            record.postMeasurement!,
+            record.preMeasurement,
+            360.0,
+          )
+        : (record.postMeasurement! - record.preMeasurement).abs();
     final instructedUnits = _intensityUnits(instructedBand);
     if (instructedUnits == 0) return;
     final observedGain = actualMovement / instructedUnits;

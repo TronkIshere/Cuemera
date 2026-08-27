@@ -221,7 +221,30 @@ class ReferenceImageAnalyzer {
     );
     try {
       final poses = await poseDetector.processImage(inputImage);
-      if (poses.isNotEmpty) landmarks = poses.first.landmarks;
+      if (poses.length == 1) {
+        landmarks = poses.first.landmarks;
+      } else if (poses.length > 1) {
+        // Same defensive fix as _analyzeFace's face selection: don't
+        // blindly trust detection order. Uses the landmarks' own bounding
+        // box as a size proxy, since Pose has no boundingBox of its own.
+        double area(Map<PoseLandmarkType, PoseLandmark> lm) {
+          if (lm.isEmpty) return 0;
+          final xs = lm.values.map((l) => l.x);
+          final ys = lm.values.map((l) => l.y);
+          return (xs.reduce(max) - xs.reduce(min)) *
+              (ys.reduce(max) - ys.reduce(min));
+        }
+
+        landmarks = poses
+            .map((p) => p.landmarks)
+            .reduce((a, b) => area(a) >= area(b) ? a : b);
+        if (kDebugMode) {
+          debugPrint(
+            'ReferenceImageAnalyzer: ${poses.length} poses detected, '
+            'picked the largest by landmark bounding-box area.',
+          );
+        }
+      }
     } catch (e, st) {
       ErrorReportingService.instance.report(
         e,
@@ -532,7 +555,24 @@ class ReferenceImageAnalyzer {
     try {
       final faces = await faceDetector.processImage(inputImage);
       if (faces.isNotEmpty) {
-        final face = faces.first;
+        final face = faces.length == 1
+            ? faces.first
+            : faces.reduce((a, b) {
+                final areaA = a.boundingBox.width * a.boundingBox.height;
+                final areaB = b.boundingBox.width * b.boundingBox.height;
+                return areaA >= areaB ? a : b;
+              });
+        if (kDebugMode && faces.length > 1) {
+          debugPrint(
+            'ReferenceImageAnalyzer: ${faces.length} faces detected, '
+            'picked the largest by bounding-box area '
+            '(${face.boundingBox.width.round()}x'
+            '${face.boundingBox.height.round()}) — bug found this session: '
+            'this used to always take faces.first, which could pick up a '
+            'small printed/illustrated face (e.g. on a t-shirt) instead of '
+            "the actual subject's much larger one.",
+          );
+        }
         faceAngleDegrees = face.headEulerAngleY;
         faceAngleXDegrees = face.headEulerAngleX;
         faceAngleZDegrees = face.headEulerAngleZ;
