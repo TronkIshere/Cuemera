@@ -13,6 +13,7 @@ import '../../scene_analysis/providers/scene_providers.dart';
 import '../../settings/providers/ai_coaching_providers.dart';
 import '../domain/action_plan.dart';
 import '../domain/reference_comparison_engine.dart';
+import '../models/coaching_decision.dart' show CoachingSeverityBand;
 import '../services/llm_contract.dart';
 import '../services/llm_output_validator.dart';
 import 'coaching_phrase_model_providers.dart';
@@ -60,18 +61,14 @@ final voiceDirectorListenerProvider = Provider.autoDispose<void>((ref) {
   DateTime? lastGenerationAttemptAt;
   PriorityAction? pendingAction;
 
-  TtsEmphasis emphasisFor(severityBand) {
-    try {
-      switch (severityBand.name) {
-        case 'strong':
-          return TtsEmphasis.strong;
-        case 'moderate':
-          return TtsEmphasis.moderate;
-        default:
-          return TtsEmphasis.mild;
-      }
-    } catch (_) {
-      return TtsEmphasis.mild;
+  TtsEmphasis emphasisFor(CoachingSeverityBand severityBand) {
+    switch (severityBand) {
+      case CoachingSeverityBand.strong:
+        return TtsEmphasis.strong;
+      case CoachingSeverityBand.moderate:
+        return TtsEmphasis.moderate;
+      case CoachingSeverityBand.mild:
+        return TtsEmphasis.mild;
     }
   }
 

@@ -149,6 +149,22 @@ bool attributeTemporallyEligible(
       return subject.temporallyEligibleFor('bodyYawEstimate');
     case CoachingAttribute.bodyRatio:
       return subject.temporallyEligibleFor('bodyRatio');
+    // Bug found and fixed this session: face_analyzer.dart has populated
+    // metricTemporalEligibility for these five fields since the
+    // sixteenth session (same fields the seventeenth-session confidence
+    // fix in reference_comparison_engine.dart targeted) — this function
+    // just never picked it up, silently falling through to `default:
+    // true` instead.
+    case CoachingAttribute.facePitch:
+      return subject.temporallyEligibleFor('faceAngleXDegrees');
+    case CoachingAttribute.faceRoll:
+      return subject.temporallyEligibleFor('faceAngleZDegrees');
+    case CoachingAttribute.faceYaw:
+      return subject.temporallyEligibleFor('faceAngleDegrees');
+    case CoachingAttribute.mouthOpen:
+      return subject.temporallyEligibleFor('mouthOpenRatio');
+    case CoachingAttribute.eyeOpen:
+      return subject.temporallyEligibleFor('eyeOpenRatio');
     case CoachingAttribute.rightArmPosition:
       return subject.temporallyEligibleFor('rightArmRaiseDegrees') &&
           subject.temporallyEligibleFor('rightElbowAngleDegrees');
@@ -172,18 +188,27 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
   DateTime? instructedAt;
   DateTime? lastGenerationAttemptAt;
 
-  TtsEmphasis emphasisFor(severityBand) {
-    try {
-      switch (severityBand.name) {
-        case 'strong':
-          return TtsEmphasis.strong;
-        case 'moderate':
-          return TtsEmphasis.moderate;
-        default:
-          return TtsEmphasis.mild;
-      }
-    } catch (_) {
-      return TtsEmphasis.mild;
+  TtsEmphasis emphasisFor(CoachingSeverityBand severityBand) {
+    switch (severityBand) {
+      case CoachingSeverityBand.strong:
+        return TtsEmphasis.strong;
+      case CoachingSeverityBand.moderate:
+        return TtsEmphasis.moderate;
+      case CoachingSeverityBand.mild:
+        return TtsEmphasis.mild;
+    }
+  }
+
+  // Bug found and fixed this session: v1 (voice_providers.dart) checks
+  // ttsService.isSpeaking and queues/retries before ever calling
+  // .speak(); this file called .speak() unconditionally at every call
+  // site, risking talking over its own still-playing previous utterance
+  // if LLM generation happened to run long. Waits rather than skips, so
+  // the state machine's already-committed instructed() timing is
+  // unaffected — only the actual audio output is delayed.
+  Future<void> waitForTtsFree() async {
+    while (ttsService.isSpeaking) {
+      await Future.delayed(const Duration(milliseconds: 150));
     }
   }
 
@@ -213,12 +238,24 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
         phraseModel == null ||
         !lifecycle.canAttemptGeneration ||
         !llmCadenceOk) {
+      if (kDebugMode) {
+        debugPrint(
+          aiUnavailable ||
+                  !aiCoachingEnabled ||
+                  phraseModel == null ||
+                  !lifecycle.canAttemptGeneration
+              ? 'ai_gate(v2): fallback to rule-based phrase'
+              : 'ai_gate(v2): llm cadence floor not met, fallback to rule-based phrase',
+        );
+      }
       ref.read(displayedCoachingPhraseProvider.notifier).state = plan.phrase;
+      await waitForTtsFree();
       ttsService.speak(plan.phrase, emphasis: emphasis);
       return;
     }
     lastGenerationAttemptAt = now;
 
+    final stopwatch = Stopwatch()..start();
     String? generated;
     try {
       generated = await lifecycle
@@ -239,6 +276,21 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
       );
       generated = null;
     }
+    stopwatch.stop();
+
+    // Bug found and fixed this session: v1 (voice_providers.dart) tracks
+    // this telemetry, v2 never did — kept them in sync so a debug overlay
+    // reading these two variables gets meaningful data regardless of
+    // which listener is currently active.
+    lastPhraseGenerationLatencyMs = stopwatch.elapsedMilliseconds;
+    lastPhraseGenerationSucceeded = generated != null;
+    if (kDebugMode) {
+      debugPrint(
+        'coaching_phrase_generation(v2): ${stopwatch.elapsedMilliseconds}ms, '
+        'attribute=${plan.decision.attribute.name}, '
+        'succeeded=${generated != null}',
+      );
+    }
 
     if (epoch != generationEpoch) return;
 
@@ -255,6 +307,7 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
 
       if (validation.passed) {
         ref.read(displayedCoachingPhraseProvider.notifier).state = generated;
+        await waitForTtsFree();
         ttsService.speak(generated, emphasis: emphasis);
         return;
       }
@@ -265,11 +318,18 @@ final voiceDirectorListenerV2Provider = Provider.autoDispose<void>((ref) {
         context: 'voice_providers_v2: validation failed',
       );
       ref.read(displayedCoachingPhraseProvider.notifier).state = plan.phrase;
+      await waitForTtsFree();
       ttsService.speak(plan.phrase, emphasis: emphasis);
       return;
     }
 
+    if (kDebugMode) {
+      debugPrint(
+        'ai_gate(v2): generate() failed, lifecycleState=${lifecycle.state.name}',
+      );
+    }
     ref.read(displayedCoachingPhraseProvider.notifier).state = plan.phrase;
+    await waitForTtsFree();
     ttsService.speak(plan.phrase, emphasis: emphasis);
   }
 

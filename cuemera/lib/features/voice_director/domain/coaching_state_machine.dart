@@ -26,6 +26,7 @@ import 'package:cuemera/features/voice_director/domain/coaching_eligibility.dart
 import 'package:cuemera/features/voice_director/domain/correction_feedback.dart';
 import 'package:cuemera/features/voice_director/domain/root_cause_engine.dart';
 import 'package:cuemera/features/voice_director/models/coaching_decision.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 enum CoachingState {
   observe,
@@ -159,13 +160,28 @@ class CoachingStateMachine {
     List<ActionPlan> filterEligible(List<ActionPlan> tier) {
       final collapsed = rootCause.collapse(tier);
       return collapsed.where((plan) {
-        if (sessionMemory.isSuppressed(plan.decision.attribute)) return false;
+        if (sessionMemory.isSuppressed(plan.decision.attribute)) {
+          if (kDebugMode) {
+            debugPrint(
+              'eligibility_gate: ${plan.decision.attribute.name} suppressed '
+              'for the rest of this session (repeated reversals)',
+            );
+          }
+          return false;
+        }
         if (sessionMemory.inPostResolutionGrace(
           plan.decision.attribute,
           at,
           postResolutionGrace,
-        ))
+        )) {
+          if (kDebugMode) {
+            debugPrint(
+              'eligibility_gate: ${plan.decision.attribute.name} in '
+              'post-resolution grace period',
+            );
+          }
           return false;
+        }
         final ctx = contextFor(plan);
         final result = eligibility.evaluatePlan(
           plan,
@@ -175,6 +191,9 @@ class CoachingStateMachine {
           inCooldown:
               false, // per-metric cooldown already reflected in temporallyEligible
         );
+        if (kDebugMode && !result.eligible) {
+          debugPrint(result.debugLine(plan.decision.attribute.name));
+        }
         return result.eligible;
       }).toList();
     }

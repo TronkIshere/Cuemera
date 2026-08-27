@@ -95,8 +95,15 @@ class SettingsScreen extends ConsumerWidget {
                             value: aiCoaching.enabled,
                             onChanged: aiCoaching.isInstalling
                                 ? null
-                                : (value) =>
-                                      aiCoachingNotifier.setEnabled(value),
+                                : (value) {
+                                    aiCoachingNotifier.setEnabled(value);
+                                    // Coaching v2 requires AI Coaching —
+                                    // if AI Coaching turns off, v2 can't
+                                    // stay on without it.
+                                    if (!value && coachingV2.enabled) {
+                                      coachingV2Notifier.setEnabled(false);
+                                    }
+                                  },
                           ),
                         ],
                       ),
@@ -187,7 +194,9 @@ class SettingsScreen extends ConsumerWidget {
                             const SizedBox(height: 2),
                             Text(
                               'State-machine-driven coaching with '
-                              'closed-loop follow-up. Not yet '
+                              'closed-loop follow-up, using AI-generated '
+                              'phrases like AI Coaching above. Requires '
+                              'AI Coaching to be turned on first. Not yet '
                               'device-verified — off by default.',
                               style: AppTypography.caption(
                                 colors,
@@ -198,8 +207,9 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                       Switch(
                         value: coachingV2.enabled,
-                        onChanged: (value) =>
-                            coachingV2Notifier.setEnabled(value),
+                        onChanged: aiCoaching.enabled
+                            ? (value) => coachingV2Notifier.setEnabled(value)
+                            : null,
                       ),
                     ],
                   ),

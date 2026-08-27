@@ -607,11 +607,29 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           right: AppSpacing.md,
           child: Consumer(
             builder: (context, ref, _) {
-              final nextAction = ref.watch(nextActionProvider);
-              if (nextAction == null) return const SizedBox.shrink();
-              final displayedPhrase =
-                  ref.watch(displayedCoachingPhraseProvider) ??
-                  nextAction.phrase;
+              final coachingV2Enabled = ref.watch(
+                coachingV2SettingsProvider.select((s) => s.enabled),
+              );
+              final displayedPhrase = ref.watch(
+                displayedCoachingPhraseProvider,
+              );
+
+              // Bug found and fixed this session: this used to always fall
+              // back to nextActionProvider's phrase (v1's independent
+              // single-best pick) whenever displayedCoachingPhraseProvider
+              // was null — including while v2 is the active listener. v2's
+              // eligibility/root-cause/session-memory logic can legitimately
+              // choose differently (or choose nothing) from v1, so that
+              // fallback could show text the user isn't actually hearing.
+              final String? phraseToShow;
+              if (coachingV2Enabled) {
+                phraseToShow = displayedPhrase;
+              } else {
+                final nextAction = ref.watch(nextActionProvider);
+                phraseToShow = displayedPhrase ?? nextAction?.phrase;
+              }
+              if (phraseToShow == null) return const SizedBox.shrink();
+
               return Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -624,7 +642,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                     border: Border.all(color: colors.accent, width: 1.5),
                   ),
                   child: Text(
-                    displayedPhrase,
+                    phraseToShow,
                     style: AppTypography.body(colors).copyWith(
                       color: colors.accent,
                       fontWeight: FontWeight.w600,
