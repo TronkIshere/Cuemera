@@ -213,11 +213,18 @@ class AutoCaptureService {
     final subjectValue = subject.shoulderBalanceRatio;
     if (subjectValue == null) return false;
 
-    final deviation = ComparisonMath.relativeDeviation(
-      subjectValue,
-      referenceValue,
-    );
-    if (deviation == null) return true;
+    // NOTE: was `ComparisonMath.relativeDeviation` here, but the coaching
+    // evaluator for this same attribute (_evaluateShoulderBalance in
+    // reference_comparison_engine.dart) deliberately uses the absolute
+    // `ComparisonMath.deviation` — a session-16 fix split
+    // maxDeviationForPoseRatio (absolute) from
+    // maxRelativeDeviationForPoseRatio (relative) specifically because
+    // shoulderBalanceRatio's target is typically a small number (e.g. 0.18
+    // in a real reference photo), so dividing by it inflates a modest
+    // absolute gap into a huge relative one — capable of blocking capture
+    // even after coaching has stopped complaining about this attribute.
+    // Switched to match: same formula, same threshold function.
+    final deviation = ComparisonMath.deviation(subjectValue, referenceValue);
 
     final threshold = ComparisonMath.thresholdForPoseRatio(
       tolerance.poseTolerance,
