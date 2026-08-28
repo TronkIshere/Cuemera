@@ -5,18 +5,28 @@ class ToleranceSettings {
     required this.compositionTolerance,
     required this.expressionTolerance,
     required this.colorTolerance,
+    required this.bodyYawTolerance,
   });
 
   final double poseTolerance;
   final double compositionTolerance;
   final double expressionTolerance;
   final double colorTolerance;
+  // Split out from poseTolerance: bodyYaw is derived from ML Kit's
+  // per-landmark z (depth) estimate, a single-camera guess that's
+  // noticeably noisier than the x/y-based pose attributes sharing
+  // poseTolerance — see comparison_math.dart's thresholdForBodyYaw. A
+  // dedicated tolerance lets this be loosened on its own without also
+  // loosening shoulderAngle/shoulderBalance/facePitch/etc., which were
+  // otherwise fine.
+  final double bodyYawTolerance;
 
   static const ToleranceSettings defaultBalanced = ToleranceSettings(
     poseTolerance: 0.5,
     compositionTolerance: 0.5,
     expressionTolerance: 0.5,
     colorTolerance: 0.5,
+    bodyYawTolerance: 0.5,
   );
 
   ToleranceSettings copyWith({
@@ -24,12 +34,14 @@ class ToleranceSettings {
     double? compositionTolerance,
     double? expressionTolerance,
     double? colorTolerance,
+    double? bodyYawTolerance,
   }) {
     return ToleranceSettings(
       poseTolerance: poseTolerance ?? this.poseTolerance,
       compositionTolerance: compositionTolerance ?? this.compositionTolerance,
       expressionTolerance: expressionTolerance ?? this.expressionTolerance,
       colorTolerance: colorTolerance ?? this.colorTolerance,
+      bodyYawTolerance: bodyYawTolerance ?? this.bodyYawTolerance,
     );
   }
 
@@ -39,6 +51,7 @@ class ToleranceSettings {
       'compositionTolerance': compositionTolerance,
       'expressionTolerance': expressionTolerance,
       'colorTolerance': colorTolerance,
+      'bodyYawTolerance': bodyYawTolerance,
     };
   }
 
@@ -48,6 +61,13 @@ class ToleranceSettings {
       compositionTolerance: (map['compositionTolerance'] as num).toDouble(),
       expressionTolerance: (map['expressionTolerance'] as num).toDouble(),
       colorTolerance: (map['colorTolerance'] as num).toDouble(),
+      // Old persisted settings (saved before this field existed) won't
+      // have this key — fall back to poseTolerance's value so an
+      // existing user's saved settings don't suddenly behave as if
+      // bodyYaw strictness were unset/zero.
+      bodyYawTolerance: map.containsKey('bodyYawTolerance')
+          ? (map['bodyYawTolerance'] as num).toDouble()
+          : (map['poseTolerance'] as num).toDouble(),
     );
   }
 }

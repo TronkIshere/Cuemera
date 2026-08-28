@@ -324,6 +324,13 @@ class ToleranceSliders extends ConsumerWidget {
           (value) =>
               notifier.state = tolerance.copyWith(colorTolerance: 1.0 - value),
         ),
+        _slider(
+          'Body rotation strictness',
+          1.0 - tolerance.bodyYawTolerance,
+          (value) => notifier.state = tolerance.copyWith(
+            bodyYawTolerance: 1.0 - value,
+          ),
+        ),
       ],
     );
   }

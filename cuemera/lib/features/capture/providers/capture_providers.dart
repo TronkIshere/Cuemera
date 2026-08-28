@@ -85,7 +85,13 @@ final autoCaptureProvider = Provider<void>((ref) {
 
       await autoCaptureService.triggerCapture();
 
-      await ttsService.speak(holdStillPhrase, force: true);
+      // interrupt: true — cut off whatever coaching phrase might still be
+      // mid-playback right now instead of waiting for it to finish first.
+      // Without this, "Hold still." (and the capture that follows it)
+      // could be delayed several seconds behind an in-progress sentence,
+      // by which point the pose that actually triggered this capture may
+      // no longer hold.
+      await ttsService.speak(holdStillPhrase, force: true, interrupt: true);
 
       final imagePath = await cameraService.capture();
       if (cameraService.lastGallerySaveSucceeded == false) {
@@ -112,7 +118,11 @@ final autoCaptureProvider = Provider<void>((ref) {
       countNotifier.state = newCount;
 
       if (newCount >= maxAutoCaptureShots) {
-        await ttsService.speak(sessionCompletePhrase, force: true);
+        await ttsService.speak(
+          sessionCompletePhrase,
+          force: true,
+          interrupt: true,
+        );
         ref.read(autoCaptureSessionMessageProvider.notifier).state =
             sessionCompletePhrase;
       }

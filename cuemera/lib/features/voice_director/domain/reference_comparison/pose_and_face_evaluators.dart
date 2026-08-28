@@ -456,8 +456,8 @@ AttributeEvaluation? evaluateBodyYaw(
     deviation,
     ComparisonMath.maxDeviationForPose,
   );
-  final thresholdForPose = ComparisonMath.thresholdForPose(
-    tolerance.poseTolerance,
+  final thresholdForPose = ComparisonMath.thresholdForBodyYaw(
+    tolerance.bodyYawTolerance,
   );
   final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
     deviation,

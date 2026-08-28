@@ -42,6 +42,13 @@ class ComparisonMath {
   static const double maxDeviationForHue = 180.0;
 
   static double thresholdForPose(double poseTolerance) => poseTolerance * 45.0;
+  // Dedicated threshold for bodyYaw — same 0..45° scale as
+  // thresholdForPose, kept as its own function (rather than reusing
+  // thresholdForPose) specifically so bodyYaw's tolerance can be tuned
+  // independently of the other pose attributes that share
+  // poseTolerance. See ToleranceSettings.bodyYawTolerance for why.
+  static double thresholdForBodyYaw(double bodyYawTolerance) =>
+      bodyYawTolerance * 45.0;
   static double thresholdForPoseRatio(double poseTolerance) =>
       poseTolerance * 0.5;
   static double thresholdForRelativePoseRatio(double poseTolerance) =>

@@ -199,7 +199,14 @@ class AutoCaptureService {
       referenceValue,
       360.0,
     );
-    final threshold = ComparisonMath.thresholdForPose(tolerance.poseTolerance);
+    // Uses the dedicated bodyYawTolerance rather than poseTolerance, so
+    // loosening this (for the noisy z-depth-derived bodyYaw signal) via
+    // its own slider doesn't also loosen the capture gate for
+    // shoulderAngle/facePitch/faceRoll/faceYaw, which share poseTolerance
+    // and don't need it.
+    final threshold = ComparisonMath.thresholdForBodyYaw(
+      tolerance.bodyYawTolerance,
+    );
     return !ComparisonMath.exceedsThreshold(deviation, threshold);
   }
 

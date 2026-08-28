@@ -573,14 +573,25 @@ class ReferenceComparisonEngine {
       poseAndFaceTier,
       _evaluateBodyYaw(subject, reference, tolerance, isFrontCamera),
     );
-    addIfPresent(
-      poseAndFaceTier,
-      _evaluateRightArmPosition(subject, reference, tolerance),
-    );
-    addIfPresent(
-      poseAndFaceTier,
-      _evaluateLeftArmPosition(subject, reference, tolerance),
-    );
+    // If the two arms' categorical poses are cleanly swapped relative to the
+    // reference (e.g. reference wants right-arm-near-face + left-hand-on-hip,
+    // but the subject has left-arm-near-face + right-hand-on-hip), the
+    // single most useful correction is "switch your arms" — not two
+    // separate per-arm corrections that would otherwise both fire and read
+    // like conflicting/redundant advice for what is really one mistake.
+    final armSwap = _evaluateArmSwap(subject, reference);
+    if (armSwap != null) {
+      addIfPresent(poseAndFaceTier, armSwap);
+    } else {
+      addIfPresent(
+        poseAndFaceTier,
+        _evaluateRightArmPosition(subject, reference, tolerance),
+      );
+      addIfPresent(
+        poseAndFaceTier,
+        _evaluateLeftArmPosition(subject, reference, tolerance),
+      );
+    }
 
     addIfPresent(
       compositionTier,
@@ -1105,14 +1116,13 @@ class ReferenceComparisonEngine {
       deviation,
       ComparisonMath.maxDeviationForPose,
     );
-    final thresholdForPose = ComparisonMath.thresholdForPose(
-      tolerance.poseTolerance,
+    final thresholdForPose = ComparisonMath.thresholdForBodyYaw(
+      tolerance.bodyYawTolerance,
     );
     final deviationExceedsThreshold = ComparisonMath.exceedsThreshold(
       deviation,
       thresholdForPose,
     );
-
     // NOTE: same isFrontCamera-flip pattern as _evaluateShoulderBalance had
     // (see that method's note) — this one relies on the sign of
     // leftShoulder/rightShoulder .z (ML Kit depth), which we don't have an
@@ -1219,6 +1229,90 @@ class ReferenceComparisonEngine {
       'get that {side} arm higher, matching the reference',
     ],
   };
+
+  // ---------------------------------------------------------------------
+  // Arm swap detection — catches the common "mirrored the whole pose"
+  // mistake: raising the wrong arm and/or putting the wrong hand on the
+  // hip, i.e. doing the reference's left-arm action with the right arm
+  // and vice versa. Checked once, ahead of the two per-arm evaluators —
+  // if a clean swap is detected, this fires alone instead of two
+  // separate (and, in this case, actively misleading) per-arm
+  // corrections, since the real fix is "switch arms", not "adjust each
+  // arm a little".
+  //
+  // NOTE: this reuses CoachingAttribute.rightArmPosition rather than a
+  // dedicated attribute value — coaching_decision.dart / action_plan.dart
+  // (where CoachingAttribute and kAttributeControllability are actually
+  // defined) weren't available when this was written, so a clean new
+  // enum case couldn't be added without guessing at their structure. If
+  // those files are available, a proper CoachingAttribute.armsSwapped
+  // (with its own controllability entry) would be more correct than this
+  // reuse — this attribute value only affects tier/rotation bookkeeping
+  // and any downstream analytics keyed on it, not the phrase itself.
+  // ---------------------------------------------------------------------
+
+  static const List<String> _kArmsSwappedPhrases = [
+    'Looks like your arms are swapped — switch which arm is raised',
+    'Your arms are reversed from the reference — swap them over',
+    'Try switching arms — the reference has the opposite arm doing that',
+    'You have it backwards — swap your left and right arm positions',
+    'Swap your arms — the pose is mirrored from the reference right now',
+    "Your right and left arms are doing each other's job — switch them",
+    'Mirror image on the arms — swap which one is raised and which is on your hip',
+  ];
+
+  bool _armsAppearSwapped(SubjectProfile subject, ReferenceProfile reference) {
+    final refLeft = reference.leftArmPoseCategory;
+    final refRight = reference.rightArmPoseCategory;
+    final subLeft = subject.leftArmPoseCategory;
+    final subRight = subject.rightArmPoseCategory;
+
+    if (refLeft == null ||
+        refRight == null ||
+        subLeft == null ||
+        subRight == null) {
+      return false;
+    }
+    // Nothing to swap if the reference wants the same category on both
+    // arms (e.g. both 'down') — there's no "wrong side" in that case.
+    if (refLeft == refRight) return false;
+
+    return subLeft == refRight && subRight == refLeft;
+  }
+
+  _AttributeEvaluation? _evaluateArmSwap(
+    SubjectProfile subject,
+    ReferenceProfile reference,
+  ) {
+    if (!_armsAppearSwapped(subject, reference)) return null;
+
+    final rightConfidence = Confidence.decisionConfidence(
+      Confidence(subject.confidenceFor('rightArmRaiseDegrees')),
+      Confidence(reference.confidenceFor('rightArmRaiseDegrees')),
+    );
+    final leftConfidence = Confidence.decisionConfidence(
+      Confidence(subject.confidenceFor('leftArmRaiseDegrees')),
+      Confidence(reference.confidenceFor('leftArmRaiseDegrees')),
+    );
+    final confidence = Confidence.minOf([
+      rightConfidence,
+      leftConfidence,
+    ]).value;
+
+    return _AttributeEvaluation(
+      deviationExceedsThreshold: true,
+      decision: CoachingDecision(
+        attribute: CoachingAttribute.rightArmPosition,
+        direction: CoachingDirection.none,
+        tier: CoachingTier.poseAndFace,
+        normalizedSeverity: 1.0,
+        fallbackPhrase: _pickPhrase(_kArmsSwappedPhrases),
+        confidence: confidence,
+        controllability:
+            kAttributeControllability[CoachingAttribute.rightArmPosition]!,
+      ),
+    );
+  }
 
   _AttributeEvaluation? _evaluateRightArmPosition(
     SubjectProfile subject,
