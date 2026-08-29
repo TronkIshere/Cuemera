@@ -1194,39 +1194,39 @@ class ReferenceComparisonEngine {
     'crossed': [
       'cross your {side} arm in front of you',
       'bring your {side} arm across your body',
-      'fold your {side} arm in front, like the reference',
+      'fold your {side} arm in front',
       'wrap your {side} arm across your torso',
-      'bring your {side} arm over in front, like the shot',
-      'cross that {side} arm in, matching the reference pose',
-      'fold your {side} arm across your chest, like the reference',
+      'bring your {side} arm over in front',
+      'cross that {side} arm in',
+      'fold your {side} arm across your chest',
     ],
     'akimbo': [
       'put your {side} hand on your hip',
       'rest your {side} hand on your waist',
-      'place your {side} hand on your hip, like the reference',
+      'place your {side} hand on your hip',
       'set your {side} hand on your hip, elbow out',
-      'hook your {side} thumb on your waistband, like the shot',
-      'plant your {side} hand on your hip to match the pose',
-      'bring your {side} hand to rest on your hip, like the reference',
+      'hook your {side} thumb on your waistband',
+      'plant your {side} hand on your hip',
+      'bring your {side} hand to rest on your hip',
     ],
     'nearFace': [
       'bring your {side} hand up near your face',
       'raise your {side} hand toward your face',
-      'lift your {side} hand up near your head, like the reference',
-      'bring your {side} hand up by your forehead, like the shot',
+      'lift your {side} hand up near your head',
+      'bring your {side} hand up by your forehead',
       'raise your {side} arm up so your hand is near your face',
-      'lift that {side} hand up close to your head, matching the pose',
-      'bring your {side} hand up toward your hairline, like the reference',
-      'raise your {side} hand up near your temple, like the shot',
+      'lift that {side} hand up close to your head',
+      'bring your {side} hand up toward your hairline',
+      'raise your {side} hand up near your temple',
     ],
     'raised': [
       'raise your {side} arm',
       'lift your {side} arm up',
-      'raise your {side} arm higher, like the reference',
+      'raise your {side} arm higher',
       'bring your {side} arm up overhead a bit more',
-      'lift that {side} arm up higher to match the shot',
-      'raise your {side} arm further, like the pose',
-      'get that {side} arm higher, matching the reference',
+      'lift that {side} arm up higher',
+      'raise your {side} arm further',
+      'get that {side} arm higher',
     ],
   };
 
@@ -1440,7 +1440,7 @@ class ReferenceComparisonEngine {
                     'bring your $side arm up more, toward ${referenceRaise.round()}°',
                     'raise that $side arm further, aiming for about ${referenceRaise.round()}°',
                     'lift your $side arm up more, closer to ${referenceRaise.round()}°',
-                    'bring your $side arm higher, toward the ${referenceRaise.round()}° in the reference',
+                    'bring your $side arm higher, toward about ${referenceRaise.round()}°',
                   ]
                 : [
                     'lower your $side arm to about ${referenceRaise.round()}°',
@@ -1448,7 +1448,7 @@ class ReferenceComparisonEngine {
                     'ease your $side arm down toward ${referenceRaise.round()}°',
                     'drop your $side arm down a bit, aiming for about ${referenceRaise.round()}°',
                     'bring your $side arm down closer to ${referenceRaise.round()}°',
-                    'lower that $side arm some, toward the ${referenceRaise.round()}° in the reference',
+                    'lower that $side arm some, toward about ${referenceRaise.round()}°',
                   ],
           )
         : null;
@@ -1461,7 +1461,7 @@ class ReferenceComparisonEngine {
                     'bring your $side elbow in closer',
                     'tuck that $side elbow in a bit more',
                     'bend your $side arm at the elbow a bit more',
-                    'bring your $side elbow in tighter, like the reference',
+                    'bring your $side elbow in tighter',
                   ]
                 : [
                     'straighten your $side elbow a bit',
@@ -1469,7 +1469,7 @@ class ReferenceComparisonEngine {
                     'open up your $side elbow slightly',
                     'unbend that $side elbow a touch',
                     'straighten out your $side arm a little at the elbow',
-                    'ease your $side elbow open a bit more, like the reference',
+                    'ease your $side elbow open a bit more',
                   ],
           )
         : null;

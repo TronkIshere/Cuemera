@@ -5,23 +5,65 @@
 // auto-capture, and shot building — using synthetic (fixture) profiles
 // instead of a real camera or real ML Kit detection.
 //
+// UPDATED THIS SESSION — see the dedicated groups/tests below for detail:
+//   - shoulderBalance's front/back mirror-flip in
+//     _evaluateShoulderBalance was found to be an unverified, unjustified
+//     bug (no coordinate-level mirroring exists anywhere upstream) and
+//     removed — front and back camera now produce the SAME direction for
+//     the same numeric mismatch. The old test asserting the opposite has
+//     been rewritten into a regression test documenting why; see
+//     "ReferenceComparisonEngine" group, first test.
+//   - AutoCaptureService._shoulderBalanceOk used relativeDeviation while
+//     its own coaching counterpart used absolute deviation — since
+//     shoulderBalanceRatio targets are typically small numbers (e.g.
+//     0.18, a real reference photo's measured value), this silently
+//     over-blocked capture. Fixed to match; regression test in the
+//     "AutoCaptureService" group.
+//   - ToleranceSettings gained bodyYawTolerance, decoupled from
+//     poseTolerance specifically because bodyYaw (derived from ML Kit's
+//     noisy per-landmark z/depth estimate) needed to be loosenable
+//     without also loosening the x/y-based pose attributes that share
+//     poseTolerance. New dedicated group: "bodyYawTolerance — decoupled
+//     from poseTolerance".
+//   - Arm-position evaluation (_evaluateRightArmPosition/
+//     _evaluateLeftArmPosition, previously only in the standalone,
+//     not-confirmed-wired pose_and_face_evaluators.dart) has been ported
+//     into reference_comparison_engine.dart and wired into
+//     evaluateTiers() — see the updated "Arm-pose coaching" group header
+//     and the new "ReferenceComparisonEngine — arm position & arm-swap"
+//     group, which tests the actual production path rather than only
+//     the standalone functions.
+//   - New evaluateArmSwap / _evaluateArmSwap: detects the common
+//     mirrored-pose mistake (raising the wrong arm / wrong hand on the
+//     hip) and fires a single "switch your arms" message instead of two
+//     separate, confusing per-arm corrections. Covered in both the
+//     standalone-function group and the engine-integration group above.
+//
 // SCOPE — what this file covers:
 //   - MlKitService.rotationFor(): the pure per-lens rotation-compensation
 //     formula (front vs back), which is what the sixth-session rotation
 //     bug and every "*IsMirrored" flag ultimately sit on top of.
 //   - ComparisonMath: the shared circular/relative-deviation primitives
 //     every evaluator is built from.
-//   - ReferenceComparisonEngine: front-vs-back mirrored direction, the
-//     seventeenth-session confidence-wiring fix, root-cause collapsing,
-//     and the sixteenth-session tier-rotation-only-advances-on-a-real-pick
-//     fix.
+//   - ReferenceComparisonEngine: front-vs-back mirrored direction (now
+//     confirmed IDENTICAL for shoulderBalance — see above; still
+//     genuinely flipped and unverified for faceRoll/faceYaw/bodyYaw's
+//     phrase-direction logic, which reads a different signal source
+//     [ML Kit's own headEulerAngle / landmark z] with no independent way
+//     to verify sign convention the way shoulderBalance was verified —
+//     not changed, deliberately), the seventeenth-session
+//     confidence-wiring fix, root-cause collapsing, and the
+//     sixteenth-session tier-rotation-only-advances-on-a-real-pick fix.
 //   - score_calculator: the sixteenth-session "missing signal is omitted,
 //     not diluted with a placeholder" fix.
 //   - TrackingEngine: circular EMA across the ±180° wrap, missing-value
 //     debounce, and trackingProgress scoring.
-//   - AutoCaptureService: brightness/tracking-progress/cooldown gates, and
-//     an asymmetry this file found while writing these tests (see the
-//     dedicated test + the chat message for details).
+//   - AutoCaptureService: brightness/tracking-progress/cooldown gates, an
+//     asymmetry this file found while writing these tests (see the
+//     dedicated test + the chat message for details), the
+//     relativeDeviation/absolute-deviation scale mismatch on
+//     shoulderBalance (see above), and bodyYawTolerance's independence
+//     from poseTolerance at the capture-gate level (see above).
 //   - shot_builder / Shot: the actual capture endpoint, including a
 //     toMap/fromMap round trip.
 //   - expression_classifier.classifyExpression: a small standalone pure
@@ -57,6 +99,17 @@
 //     that's useful information — report the error back and the
 //     rotationFor() tests can be restructured around it (e.g. extracting
 //     the formula into a standalone top-level function).
+//   - AppTtsService's new `interrupt` parameter (added this session,
+//     stops in-progress playback and resets the speak() queue for
+//     time-critical phrases like "Hold still."). Untested here for the
+//     same reason as camera/MlKitService above: AppTtsService's actual
+//     behavior only matters once wired to SherpaTtsService/TtsService,
+//     both of which go through native plugins (sherpa_onnx bindings,
+//     audioplayers, flutter_tts platform channels) this file cannot
+//     construct. The interrupt/queue-reset logic itself is pure Future
+//     chaining and could be unit-tested in isolation if AppTtsService
+//     were refactored to accept a mockable player interface — that is a
+//     production-code change, not a test-file one, and hasn't been done.
 //
 // IMPORT-PATH CAVEAT: coaching_decision.dart's import path was ambiguous
 // across the production files reviewed while writing this —
@@ -408,8 +461,24 @@ void main() {
 
   // -------------------------------------------------------------------------
   group('ReferenceComparisonEngine', () {
-    test('shoulderBalance direction flips between front and back camera for '
-        'the identical numeric mismatch', () {
+    test('shoulderBalance direction is IDENTICAL between front and back '
+        'camera for the same numeric mismatch (regression test — this '
+        'used to assert the opposite, see below)', () {
+      // HISTORY: this test originally asserted that front and back camera
+      // produced OPPOSITE directions here (front=right, back=left) for
+      // the exact same subject/reference values — i.e. it treated the
+      // isFrontCamera mirror-flip in _evaluateShoulderBalance as correct
+      // behavior. That flip was found to be an unverified, unjustified
+      // bug during a real-device debugging session: no coordinate-level
+      // mirroring exists anywhere upstream (ml_kit_service.dart,
+      // pose_analyzer.dart, reference_image_analyzer.dart all derive
+      // shoulderBalanceRatio identically regardless of lens), and a real
+      // front-camera device log showed the app repeatedly saying "lift
+      // your left shoulder" while shoulderBalanceRatio drifted FURTHER
+      // from target, then trended the correct direction once the flip
+      // was removed (crossing target from -0.31 to +0.25 in one
+      // continuous, correct-direction correction). The fix: front camera
+      // now uses the identical formula as back camera for this attribute.
       final engine = ReferenceComparisonEngine();
       final subject = subjectFixture(shoulderBalanceRatio: 0.7);
       final reference = referenceFixture(shoulderBalanceRatio: 0.3);
@@ -434,8 +503,22 @@ void main() {
       expect(frontTiers.poseAndFace, hasLength(1));
       final backDirection = backTiers.poseAndFace.single.decision.direction;
       final frontDirection = frontTiers.poseAndFace.single.decision.direction;
+      // subjectValue (0.7) > referenceValue (0.3) -> the subject's left
+      // shoulder really is lower than the reference wants, on both
+      // lenses now -> both should say "lift the left shoulder".
       expect(backDirection, CoachingDirection.left);
-      expect(frontDirection, CoachingDirection.right);
+      expect(
+        frontDirection,
+        CoachingDirection.left,
+        reason:
+            'front camera must match back camera here — no verified '
+            'mirroring exists for this attribute',
+      );
+      expect(
+        frontDirection,
+        backDirection,
+        reason: 'the core assertion of this regression test',
+      );
     });
 
     test("faceRoll's confidence now reflects face_analyzer.dart's live-side "
@@ -509,6 +592,12 @@ void main() {
         compositionTolerance: 0.2,
         expressionTolerance: 0.5,
         colorTolerance: 0.2,
+        // Added this session alongside bodyYawTolerance's introduction —
+        // ToleranceSettings' constructor now requires this field. Set
+        // equal to poseTolerance here since this test isn't exercising
+        // bodyYaw at all; see the dedicated bodyYawTolerance group below
+        // for tests that actually vary it independently.
+        bodyYawTolerance: 0.5,
       );
 
       final mismatchReference = referenceFixture(
@@ -554,8 +643,17 @@ void main() {
       expect(third?.decision.attribute, CoachingAttribute.negativeSpace);
     });
 
-    test('faceRoll direction flips between front and back camera, same as '
-        'shoulderBalance above', () {
+    test('faceRoll direction flips between front and back camera — '
+        'CURRENT BEHAVIOR ONLY, NOT CONFIRMED CORRECT. This is the exact '
+        'same isFrontCamera-flip pattern shoulderBalance had before it was '
+        'found (via a real device log) to be an unverified, unjustified '
+        'bug and removed. faceRoll reads a different signal source (ML '
+        "Kit's own headEulerAngleZ, not the custom shoulder-landmark atan2 "
+        "math shoulderBalance used), so there is no independent way yet to "
+        'confirm or deny this flip the way shoulderBalance was confirmed. '
+        'If this test starts failing after a real front-camera device '
+        'test, that is expected progress, not a regression — update the '
+        'expected direction below to match reality and remove this note.', () {
       final engine = ReferenceComparisonEngine();
       final subject = subjectFixture(faceAngleZDegrees: 30);
       final reference = referenceFixture(faceAngleZDegrees: 0);
@@ -586,7 +684,11 @@ void main() {
       );
     });
 
-    test('faceYaw direction flips between front and back camera', () {
+    test('faceYaw direction flips between front and back camera — CURRENT '
+        'BEHAVIOR ONLY, NOT CONFIRMED CORRECT (see the faceRoll test '
+        'immediately above for the full explanation — same pattern, same '
+        'caveat, same signal-source difference from the confirmed '
+        'shoulderBalance fix)', () {
       final engine = ReferenceComparisonEngine();
       final subject = subjectFixture(faceAngleDegrees: 30);
       final reference = referenceFixture(faceAngleDegrees: 0);
@@ -617,7 +719,16 @@ void main() {
       );
     });
 
-    test('bodyYaw direction flips between front and back camera', () {
+    test('bodyYaw direction flips between front and back camera — CURRENT '
+        'BEHAVIOR ONLY, NOT CONFIRMED CORRECT. Same unverified pattern as '
+        'faceRoll/faceYaw above, and for a related but distinct reason: '
+        'this reads leftShoulder/rightShoulder .z (ML Kit landmark depth) '
+        'rather than a face-detector angle, and z-depth is independently '
+        'known to be this project\'s noisiest signal (see bodyYawTolerance '
+        'above, added specifically because this axis needed a much looser '
+        'threshold than the rest of pose in real device logs) — a further '
+        'reason not to trust this flip\'s correctness without a dedicated '
+        'device test.', () {
       final engine = ReferenceComparisonEngine();
       final subject = subjectFixture(bodyYawEstimate: 30);
       final reference = referenceFixture(bodyYawEstimate: 0);
@@ -706,6 +817,145 @@ void main() {
       final decision = tiers.poseAndFace.single.decision;
       expect(decision.attribute, CoachingAttribute.expression);
       expect(decision.targetExpression, 'smiling');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  group('bodyYawTolerance — decoupled from poseTolerance (added this '
+      'session, in reference_comparison_engine.dart and '
+      'pose_and_face_evaluators.dart)', () {
+    // bodyYaw is derived from ML Kit's per-landmark z (depth) estimate, a
+    // single-camera guess noticeably noisier than the x/y-based pose
+    // attributes that share poseTolerance — real device logs showed
+    // bodyYaw deviations of 40-65° even with an otherwise near-perfect
+    // pose. ToleranceSettings gained a separate bodyYawTolerance field so
+    // this can be loosened without also loosening
+    // shoulderAngle/shoulderBalance/etc.
+    test('at the shared default (bodyYawTolerance == poseTolerance == 0.5), '
+        'behavior is unchanged from before this field existed: a 40° '
+        'bodyYaw deviation still exceeds the (22.5°) threshold', () {
+      final engine = ReferenceComparisonEngine();
+      final subject = subjectFixture(bodyYawEstimate: 40);
+      final reference = referenceFixture(bodyYawEstimate: 0);
+      final scene = sceneFixture();
+
+      final tiers = engine.evaluateTiers(
+        subject: subject,
+        scene: scene,
+        reference: reference,
+        tolerance: tolerance, // defaultBalanced: both tolerances at 0.5
+        isFrontCamera: false,
+      );
+
+      expect(tiers.poseAndFace, hasLength(1));
+      expect(
+        tiers.poseAndFace.single.decision.attribute,
+        CoachingAttribute.bodyYaw,
+      );
+    });
+
+    test('loosening ONLY bodyYawTolerance clears a 40° bodyYaw deviation '
+        'while poseTolerance-sharing attributes are untouched — the core '
+        'point of splitting this out', () {
+      final engine = ReferenceComparisonEngine();
+      const looseBodyYawOnly = ToleranceSettings(
+        poseTolerance: 0.5, // unchanged — thresholdForPose stays 22.5°
+        compositionTolerance: 0.5,
+        expressionTolerance: 0.5,
+        colorTolerance: 0.5,
+        bodyYawTolerance: 1.0, // loosened — thresholdForBodyYaw becomes 45°
+      );
+      final subject = subjectFixture(
+        bodyYawEstimate: 40, // would exceed 22.5° but not 45°
+        shoulderAngleDegrees: 40, // still exceeds the untouched 22.5°
+      );
+      final reference = referenceFixture(
+        bodyYawEstimate: 0,
+        shoulderAngleDegrees: 0,
+      );
+      final scene = sceneFixture();
+
+      final tiers = engine.evaluateTiers(
+        subject: subject,
+        scene: scene,
+        reference: reference,
+        tolerance: looseBodyYawOnly,
+        isFrontCamera: false,
+      );
+
+      // bodyYaw should have dropped out (cleared by the loosened
+      // threshold); shoulderAngle should be the sole remaining candidate,
+      // proving poseTolerance-driven attributes were not affected.
+      expect(tiers.poseAndFace, hasLength(1));
+      expect(
+        tiers.poseAndFace.single.decision.attribute,
+        CoachingAttribute.shoulderAngle,
+      );
+    });
+
+    test('AutoCaptureService._bodyYawOk / debugConditionBreakdown: same '
+        'independence at the capture-gate level, matching a real device '
+        'log where a capture succeeded with a live ~45° bodyYaw deviation '
+        'while shoulderAngle/shoulderBalance stayed tightly gated', () {
+      final service = AutoCaptureService();
+      const looseBodyYawOnly = ToleranceSettings(
+        poseTolerance: 0.5,
+        compositionTolerance: 0.5,
+        expressionTolerance: 0.5,
+        colorTolerance: 0.5,
+        bodyYawTolerance: 1.0, // 45° threshold
+      );
+      final subject = subjectFixture(
+        bodyYawEstimate: 40,
+        shoulderAngleDegrees: 40,
+        faceAngleDegrees: 0,
+        faceAngleXDegrees: 0,
+        faceAngleZDegrees: 0,
+      );
+      final reference = referenceFixture(
+        bodyYawEstimate: 0,
+        shoulderAngleDegrees: 0,
+      );
+      final scene = sceneFixture(brightness: 0.8);
+
+      final breakdown = service.debugConditionBreakdown(
+        subject,
+        scene,
+        reference,
+        looseBodyYawOnly,
+        0.95,
+        DetectionThresholds.defaultValues,
+      );
+
+      expect(
+        breakdown['bodyYaw'],
+        isTrue,
+        reason: '40° is within the loosened 45° bodyYaw threshold',
+      );
+      expect(
+        breakdown['shoulderAngle'],
+        isFalse,
+        reason:
+            'shoulderAngle still uses the untouched 22.5° poseTolerance '
+            'threshold and 40° exceeds it',
+      );
+
+      final overall = service.shouldCapture(
+        subject,
+        scene,
+        reference,
+        looseBodyYawOnly,
+        0.95,
+        DetectionThresholds.defaultValues,
+      );
+      expect(
+        overall,
+        isFalse,
+        reason:
+            'still blocked overall, just for a different reason than '
+            'bodyYaw now — confirms the two thresholds are independent, '
+            'not that loosening one loosens the whole gate',
+      );
     });
   });
 
@@ -1108,6 +1358,155 @@ void main() {
 
       expect(atThreshold, isTrue);
       expect(pastThreshold, isFalse);
+    });
+
+    test('_shoulderBalanceOk uses ABSOLUTE deviation, matching '
+        '_evaluateShoulderBalance\'s coaching formula — regression test for '
+        'a real bug found this session: this gate used to call '
+        'ComparisonMath.relativeDeviation instead, which — since '
+        'shoulderBalanceRatio targets are typically small numbers like '
+        '0.18 (a real reference photo\'s measured value) — inflated a '
+        'modest absolute gap into a relative one large enough to fail, '
+        'silently blocking capture well after coaching had already '
+        'stopped complaining about this attribute', () {
+      final service = AutoCaptureService();
+      final scene = sceneFixture(brightness: 0.8);
+      // Real values from a real device log: reference shoulderBalanceRatio
+      // measured at 0.18, subject measured at 0.05 at a moment coaching had
+      // already gone quiet about the shoulders.
+      final subject = subjectFixture(
+        shoulderBalanceRatio: 0.05,
+        faceAngleDegrees: 0,
+        faceAngleXDegrees: 0,
+        faceAngleZDegrees: 0,
+      );
+      final reference = referenceFixture(shoulderBalanceRatio: 0.18);
+
+      final breakdown = service.debugConditionBreakdown(
+        subject,
+        scene,
+        reference,
+        tolerance,
+        0.95,
+        DetectionThresholds.defaultValues,
+      );
+
+      // Absolute deviation = |0.05 - 0.18| = 0.13, threshold
+      // (thresholdForPoseRatio(0.5) = 0.25) -> 0.13 < 0.25 -> should pass.
+      // Under the old relativeDeviation formula this would have computed
+      // 0.13 / 0.18 = 0.722, which is > 0.25 and would have wrongly failed.
+      expect(
+        breakdown['shoulderBalance'],
+        isTrue,
+        reason:
+            'with the fix (absolute deviation), 0.13 is comfortably under '
+            'the 0.25 threshold; if this is false, the relativeDeviation '
+            'regression has crept back in',
+      );
+    });
+
+    test('_shoulderSpanOk / _bodyRatioOk / _mouthOpenOk still use RELATIVE '
+        'deviation, unlike the now-fixed _shoulderBalanceOk — guard against '
+        'someone "fixing" these to match shoulderBalance\'s new absolute '
+        'formula by mistake. Their coaching counterparts '
+        '(_evaluateShoulderSpan/_evaluateBodyRatio/_evaluateMouthOpen) were '
+        'already relative-deviation before this session and were never '
+        'part of the bug — shoulderBalance was the one exception.', () {
+      final service = AutoCaptureService();
+      final scene = sceneFixture(brightness: 0.8);
+
+      // For each of these, a small absolute gap against a small reference
+      // value should still FAIL under relativeDeviation, proving the
+      // formula is still relative and not accidentally switched to
+      // absolute (which would pass here instead).
+      final shoulderSpanBreakdown = service.debugConditionBreakdown(
+        subjectFixture(
+          shoulderSpanRatio: 0.05,
+          faceAngleDegrees: 0,
+          faceAngleXDegrees: 0,
+          faceAngleZDegrees: 0,
+        ),
+        scene,
+        referenceFixture(shoulderSpanRatio: 0.18),
+        tolerance,
+        0.95,
+        DetectionThresholds.defaultValues,
+      );
+      expect(
+        shoulderSpanBreakdown['shoulderSpan'],
+        isFalse,
+        reason:
+            '0.13/0.18=0.722 > 0.25 under relativeDeviation — should still '
+            'fail; if true, this gate was wrongly switched to absolute',
+      );
+
+      final bodyRatioBreakdown = service.debugConditionBreakdown(
+        subjectFixture(
+          bodyRatio: 0.05,
+          faceAngleDegrees: 0,
+          faceAngleXDegrees: 0,
+          faceAngleZDegrees: 0,
+        ),
+        scene,
+        referenceFixture(bodyRatio: 0.18),
+        tolerance,
+        0.95,
+        DetectionThresholds.defaultValues,
+      );
+      expect(bodyRatioBreakdown['bodyRatio'], isFalse);
+
+      final mouthOpenBreakdown = service.debugConditionBreakdown(
+        subjectFixture(
+          mouthOpenRatio: 0.05,
+          faceAngleDegrees: 0,
+          faceAngleXDegrees: 0,
+          faceAngleZDegrees: 0,
+        ),
+        scene,
+        referenceFixture(mouthOpenRatio: 0.18),
+        tolerance,
+        0.95,
+        DetectionThresholds.defaultValues,
+      );
+      expect(mouthOpenBreakdown['mouthOpen'], isFalse);
+    });
+
+    test('FINDING, NOT CONFIRMED — worth checking once analysis_constants '
+        '.dart is available: _backgroundOk normalizes '
+        'scene.backgroundClutterCount with an inline "/10", while the '
+        'coaching evaluator for the same attribute '
+        '(_evaluateBackgroundClutter in composition_evaluators.dart) calls '
+        'a shared normalizeClutterCount(...) helper from '
+        'core/analysis/analysis_constants.dart — added in a later session '
+        'specifically to fix a live-vs-reference sampling-scale mismatch. '
+        'If normalizeClutterCount no longer means "divide by 10", this '
+        'gate and its coaching counterpart could disagree the same way '
+        'shoulderBalance\'s absolute/relative mismatch did. This test only '
+        'pins down _backgroundOk\'s CURRENT literal behavior so a future '
+        'change to analysis_constants.dart shows up as a diff here, not a '
+        'silent divergence.', () {
+      final service = AutoCaptureService();
+      final scene = sceneFixture(
+        brightness: 0.8,
+        backgroundClutterCount: 3, // 3/10 = 0.3 under the current formula
+      );
+      final reference = referenceFixture(
+        backgroundClutterCount: 5, // 5/10 = 0.5
+      );
+      // |0.3 - 0.5| = 0.2, thresholdForComposition(0.5) = 0.5 -> passes.
+      final breakdown = service.debugConditionBreakdown(
+        subjectFixture(
+          faceAngleDegrees: 0,
+          faceAngleXDegrees: 0,
+          faceAngleZDegrees: 0,
+        ),
+        scene,
+        reference,
+        tolerance,
+        0.95,
+        DetectionThresholds.defaultValues,
+      );
+      expect(breakdown['backgroundClutter'], isTrue);
     });
   });
 
@@ -1903,9 +2302,17 @@ void main() {
 
   // -------------------------------------------------------------------------
   group(
-    'Arm-pose coaching (pose_and_face_evaluators.dart) — CAUTION: this file '
-    'is not confirmed wired into the live app (see chat) — these tests '
-    'check the draft logic in isolation, not what a real user hears today',
+    'Arm-pose coaching (pose_and_face_evaluators.dart) — UPDATE: equivalent '
+    'logic (same phrasing, expanded vocabulary) has since been ported into '
+    'reference_comparison_engine.dart\'s _evaluateRightArmPosition/'
+    '_evaluateLeftArmPosition and wired into evaluateTiers(), so this is no '
+    'longer purely draft logic a real user never hears — see the '
+    "'ReferenceComparisonEngine — arm position & arm-swap' group below for "
+    'tests against that actual production path. pose_and_face_evaluators.'
+    'dart itself remains unconfirmed as reachable from the live app (still '
+    'flagged "likely orphaned" per the project\'s own docs), so these '
+    'tests still only prove the standalone-file logic, not what a user '
+    'hears today.',
     () {
       test('Vogue-cover-style reference pose: left hand near the face, right '
           'hand on the hip — subject with both arms down gets told to move '
@@ -1927,9 +2334,23 @@ void main() {
 
         expect(left, isNotNull);
         expect(left!.deviationExceedsThreshold, isTrue);
+        // Broad match, not one exact string: the category-instruction bank
+        // has 8 randomly-chosen nearFace variants (added this session for
+        // vocabulary depth) — every one mentions "hand" plus one of
+        // face/head/forehead/hairline/temple, but no single literal
+        // substring is common to all 8.
         expect(
           left.phrase.toLowerCase(),
-          contains('near your face'),
+          allOf(
+            contains('hand'),
+            anyOf(
+              contains('face'),
+              contains('head'),
+              contains('forehead'),
+              contains('hairline'),
+              contains('temple'),
+            ),
+          ),
           reason:
               'should tell the subject to bring the left hand up, '
               'like the reference photo',
@@ -1937,9 +2358,11 @@ void main() {
 
         expect(right, isNotNull);
         expect(right!.deviationExceedsThreshold, isTrue);
+        // Same reasoning: 7 randomly-chosen akimbo variants, one of which
+        // ("rest your right hand on your waist") says "waist" not "hip".
         expect(
           right.phrase.toLowerCase(),
-          contains('hip'),
+          anyOf(contains('hip'), contains('waist')),
           reason:
               'should tell the subject to put the right hand on the '
               'hip, like the reference photo',
@@ -1989,9 +2412,18 @@ void main() {
 
         expect(result, isNotNull);
         expect(result!.deviationExceedsThreshold, isTrue);
+        // Broad match across all 6 randomly-chosen "bend the elbow in"
+        // variants (added this session), not one hardcoded string.
         expect(
           result.phrase.toLowerCase(),
-          contains('bend your right elbow in more'),
+          anyOf(
+            contains('bend your right elbow in more'),
+            contains('fold your right elbow in a bit more'),
+            contains('bring your right elbow in closer'),
+            contains('tuck that right elbow in a bit more'),
+            contains('bend your right arm at the elbow'),
+            contains('bring your right elbow in tighter'),
+          ),
         );
         expect(result.decision.direction, CoachingDirection.decrease);
       });
@@ -2011,7 +2443,16 @@ void main() {
 
         expect(result, isNotNull);
         expect(result!.deviationExceedsThreshold, isTrue);
-        expect(result.phrase.toLowerCase(), contains('lower your left arm'));
+        // Broad match across all 6 randomly-chosen "lower the arm" variants
+        // (added this session) — all mention "left arm" and either
+        // "lower" or "down", but no single exact phrase is common to all 6.
+        expect(
+          result.phrase.toLowerCase(),
+          allOf(
+            contains('left arm'),
+            anyOf(contains('lower'), contains('down')),
+          ),
+        );
         expect(result.decision.direction, CoachingDirection.decrease);
       });
 
@@ -2030,7 +2471,24 @@ void main() {
 
         expect(result, isNotNull);
         expect(result!.deviationExceedsThreshold, isTrue);
-        expect(result.phrase.toLowerCase(), contains('raise your left arm'));
+        // Broad match across all 6 randomly-chosen "raise the arm" variants
+        // (added this session) — all mention "left arm" and one of
+        // raise/lift/up/higher, but no single exact phrase is common to
+        // all 6, and none of the "lower" variants (see the test above)
+        // contain any of these words, so this can't accidentally match
+        // the wrong direction.
+        expect(
+          result.phrase.toLowerCase(),
+          allOf(
+            contains('left arm'),
+            anyOf(
+              contains('raise'),
+              contains('lift'),
+              contains('up'),
+              contains('higher'),
+            ),
+          ),
+        );
         expect(result.decision.direction, CoachingDirection.increase);
       });
 
@@ -2062,11 +2520,102 @@ void main() {
         expect(result, isNotNull);
         expect(result!.deviationExceedsThreshold, isTrue);
         final phrase = result.phrase.toLowerCase();
-        expect(phrase, contains('lower your right arm'));
-        expect(phrase, contains('bend your right elbow in more'));
+        // Same broad-match reasoning as the two direction-correctness tests
+        // above, applied to both halves of the combined phrase.
+        expect(
+          phrase,
+          allOf(
+            contains('right arm'),
+            anyOf(contains('lower'), contains('down')),
+          ),
+        );
+        expect(
+          phrase,
+          anyOf(
+            contains('bend your right elbow in more'),
+            contains('fold your right elbow in a bit more'),
+            contains('bring your right elbow in closer'),
+            contains('tuck that right elbow in a bit more'),
+            contains('bend your right arm at the elbow'),
+            contains('bring your right elbow in tighter'),
+          ),
+        );
         // elbow's deviation (70) is larger than raise's (50), so the
         // direction should follow the elbow instruction (decrease).
         expect(result.decision.direction, CoachingDirection.decrease);
+      });
+
+      test('EDGE CASE: raise and elbow deviations are EXACTLY equal -> tie '
+          'goes to raise, since the tie-break condition is '
+          '"raiseDeviation >= elbowDeviation" (>=, not >)', () {
+        final reference = referenceFixture(
+          rightArmPoseCategory: 'akimbo',
+          rightArmRaiseDegrees: 30,
+          rightElbowAngleDegrees: 100,
+        );
+        final subject = subjectFixture(
+          rightArmPoseCategory: 'akimbo',
+          // Both deviations are 30° — comfortably past the 22.5°
+          // threshold (poseTolerance=0.5) so both actually register as
+          // exceeding it, not just tied at a sub-threshold value.
+          rightArmRaiseDegrees: 0, // deviation 30, subject < reference
+          rightElbowAngleDegrees: 130, // deviation 30, subject > reference
+        );
+
+        final result = evaluateRightArmPosition(subject, reference, tolerance);
+
+        expect(result, isNotNull);
+        expect(result!.deviationExceedsThreshold, isTrue);
+        // Both deviations are 30 -> raise wins the tie -> direction should
+        // follow the raise instruction (subject < reference -> increase),
+        // not the elbow instruction (subject > reference -> decrease).
+        expect(result.decision.direction, CoachingDirection.increase);
+      });
+
+      test('KNOWN LIMITATION, documented not fixed: evaluateArmSwap only '
+          'compares CATEGORICAL fields (leftArmPoseCategory/'
+          'rightArmPoseCategory) — if both arms happen to share the same '
+          'category as the reference but their raise/elbow ANGLES are '
+          'swapped between the two arms, this is not detected as a swap '
+          'at all, and each arm is scored against its own reference '
+          'target independently, likely producing two confusing '
+          '"both a bit off" corrections instead of one clear "you have '
+          'them backwards" message.', () {
+        final reference = referenceFixture(
+          leftArmPoseCategory: 'raised',
+          leftArmRaiseDegrees: 30,
+          rightArmPoseCategory: 'raised', // same category both sides
+          rightArmRaiseDegrees: 150,
+        );
+        // Subject's raise angles are swapped between the two arms, but
+        // both are still 'raised' -> armsAppearSwapped() can't see this,
+        // since it only ever compares the category strings, which match
+        // on both sides trivially (see the "reference wants the SAME "
+        // "category on both arms" test above for why: no swap concept
+        // applies when categories don't differ in the first place).
+        final subject = subjectFixture(
+          leftArmPoseCategory: 'raised',
+          leftArmRaiseDegrees: 150, // has the reference's RIGHT angle
+          rightArmPoseCategory: 'raised',
+          rightArmRaiseDegrees: 30, // has the reference's LEFT angle
+        );
+
+        expect(
+          evaluateArmSwap(subject, reference),
+          isNull,
+          reason:
+              'documents the real gap — this SHOULD arguably be a swap, '
+              'but the categorical-only check cannot see it',
+        );
+
+        // Each arm gets scored independently instead, per the current
+        // (limited) design:
+        final left = evaluateLeftArmPosition(subject, reference, tolerance);
+        final right = evaluateRightArmPosition(subject, reference, tolerance);
+        expect(left, isNotNull);
+        expect(left!.deviationExceedsThreshold, isTrue);
+        expect(right, isNotNull);
+        expect(right!.deviationExceedsThreshold, isTrue);
       });
 
       test('an unrecognized reference category falls back to the generic '
@@ -2083,6 +2632,196 @@ void main() {
           contains('match your left arm to the reference'),
         );
       });
+
+      // -----------------------------------------------------------------
+      // evaluateArmSwap — added this session. Catches the common
+      // "mirrored the whole pose" mistake: raising the wrong arm and/or
+      // resting the wrong hand on the hip, i.e. the subject's left/right
+      // arm categories are cleanly swapped relative to the reference's.
+      // -----------------------------------------------------------------
+
+      test('evaluateArmSwap: a clean swap (subject\'s left matches the '
+          "reference's right and vice versa) is detected", () {
+        final reference = referenceFixture(
+          leftArmPoseCategory: 'nearFace',
+          rightArmPoseCategory: 'akimbo',
+        );
+        final subject = subjectFixture(
+          leftArmPoseCategory: 'akimbo', // has the reference's RIGHT category
+          rightArmPoseCategory: 'nearFace', // has the reference's LEFT one
+        );
+
+        final result = evaluateArmSwap(subject, reference);
+
+        expect(result, isNotNull);
+        expect(result!.deviationExceedsThreshold, isTrue);
+        expect(
+          result.phrase.toLowerCase(),
+          anyOf(contains('swap'), contains('switch')),
+          reason:
+              'should tell the subject to swap arms, not adjust each '
+              'one individually',
+        );
+        expect(result.decision.direction, CoachingDirection.none);
+      });
+
+      test('evaluateArmSwap: matching categories (no swap) -> null, nothing '
+          'to say', () {
+        final reference = referenceFixture(
+          leftArmPoseCategory: 'nearFace',
+          rightArmPoseCategory: 'akimbo',
+        );
+        final subject = subjectFixture(
+          leftArmPoseCategory: 'nearFace',
+          rightArmPoseCategory: 'akimbo',
+        );
+
+        expect(evaluateArmSwap(subject, reference), isNull);
+      });
+
+      test('evaluateArmSwap: both arms mismatched but NOT a clean swap '
+          '(e.g. both down, reference wants nearFace/akimbo) -> null — this '
+          'is two independent corrections, not a swap', () {
+        final reference = referenceFixture(
+          leftArmPoseCategory: 'nearFace',
+          rightArmPoseCategory: 'akimbo',
+        );
+        final subject = subjectFixture(
+          leftArmPoseCategory: 'down',
+          rightArmPoseCategory: 'down',
+        );
+
+        expect(evaluateArmSwap(subject, reference), isNull);
+      });
+
+      test('evaluateArmSwap: reference wants the SAME category on both arms '
+          '(e.g. both down) -> null even if the subject also has both arms '
+          'in the same (different) category — there is no "wrong side" '
+          'concept when both reference targets are identical', () {
+        final reference = referenceFixture(
+          leftArmPoseCategory: 'down',
+          rightArmPoseCategory: 'down',
+        );
+        final subject = subjectFixture(
+          leftArmPoseCategory: 'raised',
+          rightArmPoseCategory: 'raised',
+        );
+
+        expect(evaluateArmSwap(subject, reference), isNull);
+      });
+
+      test('evaluateArmSwap: missing category data on either side -> null, '
+          'not a crash', () {
+        final reference = referenceFixture(rightArmPoseCategory: 'akimbo');
+        final subject = subjectFixture(rightArmPoseCategory: 'nearFace');
+        // leftArmPoseCategory is null on both -> can't determine a swap.
+
+        expect(evaluateArmSwap(subject, reference), isNull);
+      });
     },
   );
+
+  // -------------------------------------------------------------------------
+  group('ReferenceComparisonEngine — arm position & arm-swap (wired into '
+      'evaluateTiers() this session)', () {
+    test(
+      'arm-position mismatch (non-swap) surfaces through the real '
+      'production path, not just the standalone pose_and_face_evaluators '
+      '.dart functions — proves this is actually wired in, not draft-only',
+      () {
+        final engine = ReferenceComparisonEngine();
+        final reference = referenceFixture(
+          rightArmPoseCategory: 'akimbo',
+          rightArmRaiseDegrees: 30,
+          rightElbowAngleDegrees: 100,
+        );
+        final subject = subjectFixture(
+          rightArmPoseCategory: 'down', // mismatched category, not a swap
+        );
+        final scene = sceneFixture();
+
+        final tiers = engine.evaluateTiers(
+          subject: subject,
+          scene: scene,
+          reference: reference,
+          tolerance: tolerance,
+          isFrontCamera: false,
+        );
+
+        expect(tiers.poseAndFace, isNotEmpty);
+        expect(
+          tiers.poseAndFace.any(
+            (c) => c.decision.attribute == CoachingAttribute.rightArmPosition,
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test('a clean arm swap produces exactly ONE candidate (the swap '
+        'message) instead of two separate, confusing per-arm corrections', () {
+      final engine = ReferenceComparisonEngine();
+      final reference = referenceFixture(
+        leftArmPoseCategory: 'nearFace',
+        rightArmPoseCategory: 'akimbo',
+      );
+      final subject = subjectFixture(
+        leftArmPoseCategory: 'akimbo',
+        rightArmPoseCategory: 'nearFace',
+      );
+      final scene = sceneFixture();
+
+      final tiers = engine.evaluateTiers(
+        subject: subject,
+        scene: scene,
+        reference: reference,
+        tolerance: tolerance,
+        isFrontCamera: false,
+      );
+
+      // If the swap short-circuit were NOT wired in, this would produce
+      // two candidates (rightArmPosition and leftArmPosition, both
+      // mismatched categories) instead of one swap message.
+      expect(
+        tiers.poseAndFace,
+        hasLength(1),
+        reason:
+            'expected exactly the swap message, not two separate '
+            'per-arm corrections',
+      );
+      expect(
+        tiers.poseAndFace.single.decision.fallbackPhrase.toLowerCase(),
+        anyOf(contains('swap'), contains('switch')),
+      );
+    });
+
+    test('no swap -> the two per-arm evaluators run normally through the '
+        'engine (regression guard: the swap check must not swallow '
+        'legitimate individual corrections)', () {
+      final engine = ReferenceComparisonEngine();
+      final reference = referenceFixture(
+        leftArmPoseCategory: 'nearFace',
+        rightArmPoseCategory: 'akimbo',
+      );
+      final subject = subjectFixture(
+        leftArmPoseCategory: 'down',
+        rightArmPoseCategory: 'down',
+      );
+      final scene = sceneFixture();
+
+      final tiers = engine.evaluateTiers(
+        subject: subject,
+        scene: scene,
+        reference: reference,
+        tolerance: tolerance,
+        isFrontCamera: false,
+      );
+
+      final attributes = tiers.poseAndFace
+          .map((c) => c.decision.attribute)
+          .toSet();
+      expect(attributes, contains(CoachingAttribute.leftArmPosition));
+      expect(attributes, contains(CoachingAttribute.rightArmPosition));
+    });
+  });
 }
